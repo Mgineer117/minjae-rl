@@ -1,14 +1,14 @@
 from setuptools import setup, find_packages
 
 setup(
-        name='offlinerlkit',
+        name='minjaerl',
         version="0.0.1",
         description=(
-            'OfflineRL-kit'
+            'minjae-rl'
         ),
-        author='Yihao Sun',
-        author_email='sunyh@lamda.nju.edu.cn',
-        maintainer='yihaosun1124',
+        author='Minjae Cho',
+        author_email='minjae5@illinois.edu',
+        maintainer='Mgineer117',
         packages=find_packages(),
         platforms=["all"],
         install_requires=[
@@ -23,8 +23,7 @@ setup(
             "pandas",
             "scikit-learn",
             #"ray==1.13.0",
-            "torch==2.0.1",
-            "torchaudio==2.0.2",
+            "torch==2.0.0",
             "oauthlib>=3.0.0",
             "tensorboard",
             "tqdm",
