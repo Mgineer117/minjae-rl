@@ -38,11 +38,21 @@ To get started with this implementation, please follow the instructions below:
     git clone https://github.com/minjae-rl
     cd minjae-rl
     ```
-
-2. **Install Dependencies:**
+2. **Create virtual environment:**
+    ```sh
+    conda create -n rlkit python==3.10.*
+    ```
+    
+3. **Install Dependencies:**
     ```sh
     pip install e .
     ```
+
+4. **Install d4rl and metaworld:**
+    ```sh
+    pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
+    pip install git+https://github.com/Farama-Foundation/Metaworld.git@04be337a12305e393c0caf0cbf5ec7755c7c8feb
+    ```   
 ## Contributing
 
 Contributions are welcome! Please fork the repository and submit pull requests. For major changes, please open an issue first to discuss what you would like to change.
