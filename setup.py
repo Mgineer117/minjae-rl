@@ -17,7 +17,7 @@ setup(
             "cython<3",
             "matplotlib",
             "h5py",
-            "opencv2-python",
+            "opencv-python",
             "numpy<1.24",
             "pandas",
             "scikit-learn",
