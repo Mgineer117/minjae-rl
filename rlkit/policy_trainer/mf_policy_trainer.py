@@ -199,15 +199,17 @@ class MFPolicyTrainer:
         next_obs = obs # initialization
         reward = 0.0
         mask = 1.0
-
-        obs, _, e_obs, _ = self.policy.encode_obs((obs, action, next_obs, reward, mask), env_idx=self.eval_env_idx)
+        
+        with torch.no_grad():
+            obs, _, e_obs, _ = self.policy.encode_obs((obs, action, next_obs, [reward], mask), env_idx=self.eval_env_idx)
 
         eval_ep_info_buffer = []
         num_episodes = 0
         episode_reward, episode_length, episode_success = 0, 0, 0
 
         while num_episodes < self._eval_episodes:
-            action = self.policy.select_action(e_obs, deterministic=True) #(obs).reshape(1,-1)
+            with torch.no_grad():
+                action = self.policy.select_action(e_obs, deterministic=True) #(obs).reshape(1,-1)
             try:
                 next_obs, reward, trunc, terminal, infos = self.eval_env.step(action.flatten())
                 done = terminal or trunc
@@ -227,7 +229,8 @@ class MFPolicyTrainer:
             episode_length += 1
             
             next_obs = self.normalize_obs(next_obs)
-            _, next_obs, _, e_next_obs = self.policy.encode_obs((obs, action, next_obs, reward, mask), env_idx=self.eval_env_idx, reset=False)
+            with torch.no_grad():
+                _, next_obs, _, e_next_obs = self.policy.encode_obs((obs, action, next_obs, [reward], mask), env_idx=self.eval_env_idx, reset=False)
             
             obs = next_obs
             e_obs = e_next_obs

@@ -1,1 +1,0 @@
-{"_wandb": {"runtime": 13}, "loss/critic_loss": 77.74236297607422, "loss/actor_loss": 38.892311096191406, "train/stochastic_reward": 0.46462202072143555, "train/success": 0.0, "sample_time": 5.2805304527282715, "_timestamp": 1716084995.8019328, "_runtime": 10.377765893936157, "_step": 0}

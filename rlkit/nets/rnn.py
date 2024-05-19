@@ -111,32 +111,19 @@ class RecurrentEncoder(nn.Module):
     def __init__(
             self,
             input_size: int,
-            hidden_sizes: Union[List[int], Tuple[int]],
-            output_size,
+            hidden_size:int,
+            output_size: int,
             rnn_initialization: bool = True,
-            activation: nn.Module = nn.ReLU,
             output_activation=identity,
-            dropout_rate: Optional[float] = None,
             device="cpu"
     ):
         super().__init__()
-        self.rnn_hidden_dim = hidden_sizes[-1]
+        self.input_size = input_size
+        self.rnn_hidden_dim = hidden_size
         self.embed_dim = output_size
 
-        hidden_sizes = [input_size] + list(hidden_sizes)
-        model = []
-        for in_dim, out_dim in zip(hidden_sizes[:-1], hidden_sizes[1:]):
-            linear_layer = nn.Linear(in_dim, out_dim)
-            if rnn_initialization:
-                nn.init.xavier_uniform_(linear_layer.weight)
-                linear_layer.bias.data.fill_(0.01)
-            model += [linear_layer, activation()]
-            if dropout_rate is not None:
-                model += [nn.Dropout(p=dropout_rate)]
-        self.fcs = nn.Sequential(*model).to(device)
-
         # input should be (task, seq, feat) and hidden should be (task, 1, feat)
-        self.lstm = nn.LSTM(self.rnn_hidden_dim, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
+        self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
 
         self.last_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
         if rnn_initialization:
@@ -147,40 +134,58 @@ class RecurrentEncoder(nn.Module):
         self.encoder_type = 'recurrent'
         self.device = torch.device(device)
 
-        self.reset()
+        self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
+        self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
 
-    def forward(self, input, do_reset=True, padded=False):
-        input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
-        
-        # expects inputs of dimension (task, seq, feat)
-        trj, seq, feat = input.shape
-        out = input.reshape(trj * seq, feat)
-
-        # embed with MLP
-        out = self.fcs(out)
-
-        out = out.view(trj, seq, -1)
+    def forward(self, input, do_reset=True, do_pad=False):
+        if do_pad:
+            input, trj = self.pack4rnn(input)
+        else:
+            input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
+            trj, seq, fea = input.shape
         
         if do_reset:
-            self.reset()
-        out, (hn, cn) = self.lstm(out, (self.hn, self.cn))
+            self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
+            self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
+
+        out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
         self.hn = hn
         self.cn = cn
         # take the last hidden state to predict z
         #out = out[:, -1, :]
 
+        if do_pad:
+            out, lengths = pad_packed_sequence(out, batch_first=True)
+            trj, seq, fea = out.shape
+            output = torch.zeros((lengths.sum(), fea)).to(self.device)
+            last_length = 0
+            for i, length in enumerate(lengths):
+                output[last_length:last_length+length] = out[i, :length, :]
+                last_length += length
+            out = output
+
         # output layer
         preactivation = self.last_layer(out)
         embedding = self.output_activation(preactivation)
-
-        if padded:
-            embedding, _ = pad_packed_sequence(embedding, batch_first=True)
-        
         return embedding.squeeze()
 
-    def reset(self, num_tasks=1):
-        self.hn = torch.zeros(num_tasks, 1, self.rnn_hidden_dim).to(self.device)
-        self.cn = torch.zeros(num_tasks, 1, self.rnn_hidden_dim).to(self.device)
+    def pack4rnn(self, tuple):
+        obss, actions, next_obss, rewards, masks = tuple
+        trajs = []
+        lengths = []
+        prev_i = 0
+        for i, mask in enumerate(masks):
+            if mask == 0:
+                trajs.append(torch.concatenate((obss[prev_i:i+1, :], actions[prev_i:i+1, :], next_obss[prev_i:i+1, :], rewards[prev_i:i+1, :]), axis=-1))
+                lengths.append(i+1 - prev_i)
+                prev_i = i + 1    
+        # Step 1: Pad the sequences
+        padded_data = pad_sequence(trajs, batch_first=True)  # (batch_size, max_seq_len, 24)
+
+        padded_data = pack_padded_sequence(padded_data, lengths=lengths, batch_first=True, enforce_sorted=False)
+
+        batch_size = len(trajs)
+        return padded_data, batch_size
     
 if __name__ == "__main__":
     model = RNNModel(14, 12)

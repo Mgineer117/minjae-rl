@@ -38,7 +38,7 @@ def get_args():
     parser.add_argument('--task-num', type=int, default=None) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
-    parser.add_argument("--embed-type", type=str, default='onehot') # one-hot or purpose
+    parser.add_argument("--embed-type", type=str, default='onehot') # onehot or purpose
     parser.add_argument("--embed-dim", type=int, default=5) # one-hot or purpose
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
@@ -87,7 +87,7 @@ def train(args=get_args()):
             rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
             encoder = RecurrentEncoder(
                 input_size=rnn_size, 
-                hidden_sizes=(rnn_size, rnn_size), 
+                hidden_size=rnn_size, 
                 output_size=args.embed_dim,
                 device = args.device
             )

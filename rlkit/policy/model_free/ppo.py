@@ -107,14 +107,14 @@ class PPOPolicy(BasePolicy):
             embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
         elif self.encoder.encoder_type == 'recurrent':
             if is_batch:
-                obs = torch.concatenate((obs[0][None, :], obs), axis=0)
-                actions = torch.concatenate((actions[0][None, :], actions), axis=0)
-                next_obs = torch.concatenate((obs[0][None, :], next_obs), axis=0)
-                rewards = torch.concatenate((torch.tensor([0.0]).to(self.device), rewards), axis=0)
-                masks = torch.concatenate((torch.tensor([1.0]).to(self.device), masks), axis=0)
+                t_obs = torch.concatenate((obs[0][None, :], obs), axis=0)
+                t_actions = torch.concatenate((actions[0][None, :], actions), axis=0)
+                t_next_obs = torch.concatenate((obs[0][None, :], next_obs), axis=0)
+                t_rewards = torch.concatenate((torch.tensor([0.0]).to(self.device)[None, :], rewards), axis=0)
+                t_masks = torch.concatenate((torch.tensor([1.0]).to(self.device)[None, :], masks), axis=0)
 
-                padded_mdp = self.pack4rnn(obs, actions, next_obs, rewards, masks)
-                embedding = self.encoder(padded_mdp, padded=True)
+                mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
+                embedding = self.encoder(mdp, do_pad=True)
                 embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
                 embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
             else:
@@ -125,25 +125,6 @@ class PPOPolicy(BasePolicy):
                 embedded_obs = embedded_next_obs
 
         return obs, next_obs, embedded_obs, embedded_next_obs
-
-    def pack4rnn(self, obss, actions, next_obss, rewards, masks):
-        trajs = []
-        prev_i = 0
-        rewards = rewards[:, None]
-        for i, mask in enumerate(masks):
-            if mask == 0:
-                trajs.append(torch.concatenate((obss[prev_i:i+1, :], actions[prev_i:i+1, :], next_obss[prev_i:i+1, :], rewards[prev_i:i+1, :]), axis=-1))
-                prev_i = i + 1    
-        # Step 1: Pad the sequences
-        padded_data = pad_sequence(trajs, batch_first=True)  # (batch_size, max_seq_len, 24)
-        sequence_lengths = torch.tensor([x.size(0) for x in trajs]) 
-
-        # Step 2: Pack the padded sequences
-        packed_data = pack_padded_sequence(padded_data, sequence_lengths, batch_first=True, enforce_sorted=False)
-        print(packed_data)
-        print(packed_data.shape)
-
-        return packed_data
     
     def learn(self, batch):
         obss, actions, next_obss, rewards, masks, logprobs, env_idxs, successes = \

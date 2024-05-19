@@ -7,6 +7,7 @@ import time
 
 from typing import Dict, Union, Tuple
 from rlkit.policy import BasePolicy
+from rlkit.nets import BaseEncoder
 from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to
 
 def conjugate_gradients(Avp, b, nsteps, device, residual_tol=1e-10):
@@ -51,6 +52,8 @@ class TRPOPolicy(BasePolicy):
             actor: nn.Module, 
             critic: nn.Module,  
             critic_optim: torch.optim.Optimizer,
+            encoder: BaseEncoder = None,
+            encoder_optim: torch.optim.Optimizer = None,
             tau: float = 0.95,
             gamma: float  = 0.99,
             max_kl: float = 1e-3,
@@ -63,6 +66,8 @@ class TRPOPolicy(BasePolicy):
         self.actor = actor
         self.critic = critic
         self.critic_optim = critic_optim
+        self.encoder = encoder
+        self.encoder_optim = encoder_optim
 
         self.loss_fn = torch.nn.MSELoss()
 
@@ -105,13 +110,65 @@ class TRPOPolicy(BasePolicy):
             action, _ = self.actforward(obs, deterministic)
         return action.cpu().numpy()
 
+    def encode_obs(self, mdp_tuple, running_state=None, env_idx = None, reset=True):
+        '''
+        Given mdp = (s, a, s', r, mask)
+        return embedding, embedded_next_obs = embedding is attached to the next_ob
+          since it should include the information of reward and transition dynamics
+        '''
+        obs, actions, next_obs, rewards, masks = mdp_tuple
+        if running_state is not None:
+            obs = running_state(obs)
+            next_obs = running_state(next_obs)
+        # check dimension
+        is_batch = True if len(obs.shape) > 1 else False
+        obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
+        actions = torch.as_tensor(actions, device=self.device, dtype=torch.float32)
+        next_obs = torch.as_tensor(next_obs, device=self.device, dtype=torch.float32)
+        rewards = torch.as_tensor(rewards, device=self.device, dtype=torch.float32)
+        masks = torch.as_tensor(masks, device=self.device, dtype=torch.float32)
+
+        if self.encoder.encoder_type == 'none':
+            embedding = None
+            embedded_obs = obs
+            embedded_next_obs = next_obs
+        elif self.encoder.encoder_type == 'onehot':
+            obs_embedding = self.encoder(obs, env_idx)
+            next_obs_embedding = self.encoder(next_obs, env_idx)
+            embedded_obs = torch.concatenate((obs_embedding, obs), axis=-1) 
+            embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
+        elif self.encoder.encoder_type == 'recurrent':
+            if is_batch:
+                t_obs = torch.concatenate((obs[0][None, :], obs), axis=0)
+                t_actions = torch.concatenate((actions[0][None, :], actions), axis=0)
+                t_next_obs = torch.concatenate((obs[0][None, :], next_obs), axis=0)
+                t_rewards = torch.concatenate((torch.tensor([0.0]).to(self.device)[None, :], rewards), axis=0)
+                t_masks = torch.concatenate((torch.tensor([1.0]).to(self.device)[None, :], masks), axis=0)
+
+                mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
+                embedding = self.encoder(mdp, do_pad=True)
+                embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
+                embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
+            else:
+                mdp = torch.concatenate((obs, actions, next_obs, rewards), axis=-1)
+                mdp = mdp[None, None, :]
+                embedding = self.encoder(mdp, do_reset=reset)
+                embedded_next_obs = torch.concatenate((embedding, next_obs), axis=-1)
+                embedded_obs = embedded_next_obs
+
+        return obs, next_obs, embedded_obs, embedded_next_obs
+    
     def learn(self, batch):
-        obss, actions, rewards, masks, successes = \
-            batch["observations"], batch["actions"], batch["rewards"], batch["masks"], batch["successes"]
+        obss, actions, next_obss, rewards, masks, env_idxs, successes = \
+            batch["observations"], batch["actions"], batch["next_observations"], \
+                batch["rewards"], batch["masks"], batch["env_idxs"], batch["successes"]
         #successes = torch.sum(successes) / len(torch.where(masks == 0.0)[0])
 
+        mdp_tuple = (obss, actions, next_obss, rewards, masks)
+        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+
         with torch.no_grad():
-            values = self.critic(obss)
+            values = self.critic(embedded_obss)
 
         """get advantage estimation from the trajectories"""
         advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)

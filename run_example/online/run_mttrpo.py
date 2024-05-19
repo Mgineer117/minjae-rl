@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from rlkit.utils.utils import seed_all, select_device
-from rlkit.nets import MLP, RNNModel, RecurrentEncoder
+from rlkit.nets import MLP, OneHotEncoder, RecurrentEncoder
 from rlkit.modules import ActorProb, Critic, DistCritic, PhiNetwork, DiagGaussian
 from rlkit.utils.load_dataset import qlearning_dataset
 from rlkit.utils.load_env import load_env
@@ -37,7 +37,7 @@ def get_args():
     parser.add_argument('--task-num', type=int, default=3) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
-    parser.add_argument("--embed-type", type=str, default='one_hot') # one-hot or purpose
+    parser.add_argument("--embed-type", type=str, default='onehot') # onehot or purpose
     parser.add_argument("--embed-dim", type=int, default=5) # one-hot or purpose
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
@@ -72,11 +72,26 @@ def train(args=get_args()):
         args.obs_shape = (training_envs[0].observation_space.shape[0],)
         args.action_dim = np.prod(training_envs[0].action_space.shape)
         args.max_action = training_envs[0].action_space.high[0]
-        if args.embed_type == 'one_hot': # for multi-task only
+        if args.embed_type == 'onehot': # for multi-task only
             args.embed_dim = len(training_envs)
+            encoder = OneHotEncoder(
+                embed_dim=args.embed_dim,
+                eval_env_idx=eval_env_idx,
+                device = args.device
+            )
+            encoder_optim = None
         elif args.embed_type == 'purpose':
-            args.embed_dim = args.embed_dim
+            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
+            encoder = RecurrentEncoder(
+                input_size=rnn_size, 
+                hidden_size=rnn_size, 
+                output_size=args.embed_dim,
+                device = args.device
+            )
+            encoder_optim = torch.optim.Adam(encoder.parameters(), lr=args.critic_lr)
         else:
+            print('...No task embedding is applied')
+            encoder_optim = None
             args.embed_dim = 0
         
         running_state = ZFilter(args.obs_shape, clip=5)
@@ -87,10 +102,8 @@ def train(args=get_args()):
             episode_len= args.episode_len,
             episode_num= args.episode_num,
             running_state=running_state,
-            embed_dim=args.embed_dim,
             device=args.device,
         )
-
 
         actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh)
         critic_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), activation=torch.nn.Tanh, hidden_dims=args.hidden_dims)
@@ -114,6 +127,8 @@ def train(args=get_args()):
             actor=actor,
             critic=critic,
             critic_optim=critic_optim,
+            encoder=encoder,
+            encoder_optim=encoder_optim,
             device=args.device
         )
 
@@ -140,7 +155,6 @@ def train(args=get_args()):
             step_per_epoch=args.step_per_epoch,
             eval_episodes=args.eval_episodes,
             obs_dim=args.obs_shape,
-            embed_dim=args.embed_dim,
             device=args.device,
         )
 
