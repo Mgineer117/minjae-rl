@@ -1,0 +1,16 @@
+gym<=0.26.2,>=0.15.4
+mujoco==2.3.3
+cython<3
+cvxpy
+matplotlib
+h5py
+opencv-python
+numpy<1.24
+pandas
+scikit-learn
+torch==2.3.0
+seaborn
+oauthlib>=3.0.0
+tensorboard
+tqdm
+wandb

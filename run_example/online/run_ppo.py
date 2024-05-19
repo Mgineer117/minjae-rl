@@ -79,8 +79,9 @@ def train(args=get_args()):
         sampler = OnlineSampler(
             obs_shape=args.obs_shape,
             action_dim=args.action_dim,
-            episode_len= args.episode_len,
-            episode_num= args.episode_num,
+            episode_len=args.episode_len,
+            episode_num=args.episode_num,
+            training_envs=training_envs,
             running_state=running_state,
             device=args.device,
         )
@@ -139,7 +140,6 @@ def train(args=get_args()):
         # create policy trainer
         policy_trainer = MFPolicyTrainer(
             policy=policy,
-            train_env=training_envs,
             eval_env=testing_envs,
             eval_env_idx=eval_env_idx,
             sampler=sampler,

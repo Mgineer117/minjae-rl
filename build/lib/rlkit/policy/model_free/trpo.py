@@ -1,0 +1,242 @@
+import numpy as np
+
+import torch
+import torch.nn as nn
+import math
+import time
+
+from typing import Dict, Union, Tuple
+from rlkit.policy import BasePolicy
+from rlkit.nets import BaseEncoder
+from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to
+
+def conjugate_gradients(Avp, b, nsteps, device, residual_tol=1e-10):
+    x = torch.zeros(b.size()).to(device)
+    r = b.clone()
+    p = b.clone()
+    rdotr = torch.dot(r, r)
+    for i in range(nsteps):
+        _Avp = Avp(p)
+        alpha = rdotr / torch.dot(p, _Avp)
+        x += alpha * p
+        r -= alpha * _Avp
+        new_rdotr = torch.dot(r, r)
+        betta = new_rdotr / rdotr
+        p = r + betta * p
+        rdotr = new_rdotr
+        if rdotr < residual_tol:
+            break
+    return x
+
+def line_search(model, f, x, fullstep, expected_improve_full, max_backtracks=15, accept_ratio=0.1):
+        fval = f(True).item()
+        
+        for stepfrac in [.5**x for x in range(max_backtracks)]:
+            x_new = x + stepfrac * fullstep
+            set_flat_params_to(model, x_new)
+            fval_new = f(True).item()
+
+            actual_improve = fval - fval_new
+
+            expected_improve = expected_improve_full * stepfrac
+
+            ratio = actual_improve / expected_improve
+
+            if actual_improve > 0 and ratio > accept_ratio:
+                return True, x_new
+        return False, x
+
+class TRPOPolicy(BasePolicy):
+    def __init__(
+            self, 
+            actor: nn.Module, 
+            critic: nn.Module,  
+            critic_optim: torch.optim.Optimizer,
+            encoder: BaseEncoder = None,
+            encoder_optim: torch.optim.Optimizer = None,
+            tau: float = 0.95,
+            gamma: float  = 0.99,
+            max_kl: float = 1e-3,
+            damping: float = 1e-2,
+            l2_reg: float = 1e-4,
+            device = None
+            ):
+        super().__init__()
+
+        self.actor = actor
+        self.critic = critic
+        self.critic_optim = critic_optim
+        self.encoder = encoder
+        self.encoder_optim = encoder_optim
+
+        self.loss_fn = torch.nn.MSELoss()
+
+        self._gamma = gamma
+        self._tau = tau
+        self._max_kl = max_kl
+        self._damping = damping
+        self._l2_reg = l2_reg
+
+        self.param_size = sum(p.numel() for p in self.actor.parameters())
+        self.device = device
+    
+    def train(self) -> None:
+        self.actor.train()
+        self.critic.train()
+
+    def eval(self) -> None:
+        self.actor.eval()
+        self.critic.eval()
+
+    def actforward(
+        self,
+        obs: torch.Tensor,
+        deterministic: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        dist = self.actor(obs)
+        if deterministic:
+            action = dist.mode()
+        else:
+            action = dist.rsample()
+        logprob = dist.log_prob(action)
+        return action, logprob
+
+    def select_action(
+        self,
+        obs: np.ndarray,
+        deterministic: bool = False
+    ) -> np.ndarray:
+        with torch.no_grad():
+            action, _ = self.actforward(obs, deterministic)
+        return action.cpu().numpy()
+
+    def encode_obs(self, mdp_tuple, running_state=None, env_idx = None, reset=True):
+        '''
+        Given mdp = (s, a, s', r, mask)
+        return embedding, embedded_next_obs = embedding is attached to the next_ob
+          since it should include the information of reward and transition dynamics
+        '''
+        obs, actions, next_obs, rewards, masks = mdp_tuple
+        if running_state is not None:
+            obs = running_state(obs)
+            next_obs = running_state(next_obs)
+        # check dimension
+        is_batch = True if len(obs.shape) > 1 else False
+        obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
+        actions = torch.as_tensor(actions, device=self.device, dtype=torch.float32)
+        next_obs = torch.as_tensor(next_obs, device=self.device, dtype=torch.float32)
+        rewards = torch.as_tensor(rewards, device=self.device, dtype=torch.float32)
+        masks = torch.as_tensor(masks, device=self.device, dtype=torch.float32)
+
+        if self.encoder.encoder_type == 'none':
+            embedding = None
+            embedded_obs = obs
+            embedded_next_obs = next_obs
+        elif self.encoder.encoder_type == 'onehot':
+            obs_embedding = self.encoder(obs, env_idx)
+            next_obs_embedding = self.encoder(next_obs, env_idx)
+            embedded_obs = torch.concatenate((obs_embedding, obs), axis=-1) 
+            embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
+        elif self.encoder.encoder_type == 'recurrent':
+            if is_batch:
+                t_obs = torch.concatenate((obs[0][None, :], obs), axis=0)
+                t_actions = torch.concatenate((actions[0][None, :], actions), axis=0)
+                t_next_obs = torch.concatenate((obs[0][None, :], next_obs), axis=0)
+                t_rewards = torch.concatenate((torch.tensor([0.0]).to(self.device)[None, :], rewards), axis=0)
+                t_masks = torch.concatenate((torch.tensor([1.0]).to(self.device)[None, :], masks), axis=0)
+
+                mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
+                embedding = self.encoder(mdp, do_pad=True)
+                embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
+                embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
+            else:
+                mdp = torch.concatenate((obs, actions, next_obs, rewards), axis=-1)
+                mdp = mdp[None, None, :]
+                embedding = self.encoder(mdp, do_reset=reset)
+                embedded_next_obs = torch.concatenate((embedding, next_obs), axis=-1)
+                embedded_obs = embedded_next_obs
+
+        return obs, next_obs, embedded_obs, embedded_next_obs
+    
+    def learn(self, batch):
+        obss, actions, next_obss, rewards, masks, env_idxs, successes = \
+            batch["observations"], batch["actions"], batch["next_observations"], \
+                batch["rewards"], batch["masks"], batch["env_idxs"], batch["successes"]
+        #successes = torch.sum(successes) / len(torch.where(masks == 0.0)[0])
+
+        mdp_tuple = (obss, actions, next_obss, rewards, masks)
+        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+
+        with torch.no_grad():
+            values = self.critic(embedded_obss)
+
+        """get advantage estimation from the trajectories"""
+        advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
+
+        """update critic"""
+        def closure():
+            self.critic_optim.zero_grad()
+            r_pred = self.critic(obss)
+            v_loss = self.loss_fn(r_pred, returns)
+            for param in self.critic.parameters():
+                v_loss += param.pow(2).sum() * self._l2_reg
+            v_loss.backward()
+            return v_loss
+        
+        self.critic_optim.step(closure)
+
+        with torch.no_grad():
+            r_pred = self.critic(obss)
+
+        v_loss = self.loss_fn(r_pred, returns)
+
+        """update policy"""
+        with torch.no_grad():
+            dist = self.actor(obss)
+            fixed_log_probs = dist.log_prob(actions)
+
+        def get_loss(volatile=False):
+            with torch.set_grad_enabled(not volatile):
+                dist = self.actor(obss)
+                log_probs = dist.log_prob(actions)
+                action_loss = -advantages * torch.exp(log_probs - fixed_log_probs)
+                return action_loss.mean()
+            
+        """directly compute Hessian*vector from KL"""
+        def Fvp_direct(v):
+            kl = self.actor.get_kl(obss)
+            kl = kl.mean()
+
+            grads = torch.autograd.grad(kl, self.actor.parameters(), create_graph=True)
+            flat_grad_kl = torch.cat([grad.view(-1) for grad in grads])
+
+            kl_v = (flat_grad_kl * v).sum()
+            grads = torch.autograd.grad(kl_v, self.actor.parameters())
+            flat_grad_grad_kl = torch.cat([grad.contiguous().view(-1) for grad in grads]).detach()
+
+            return flat_grad_grad_kl + v * self._damping
+
+        Fvp = Fvp_direct
+        
+        loss = get_loss()
+        grads = torch.autograd.grad(loss, self.actor.parameters())
+        loss_grad = torch.cat([grad.view(-1) for grad in grads]).detach()
+        stepdir = conjugate_gradients(Fvp, -loss_grad, 10, device=self.device)
+
+        shs = 0.5 * (stepdir.dot(Fvp(stepdir)))
+        lm = math.sqrt(self._max_kl / shs)
+        fullstep = stepdir * lm
+        expected_improve = -loss_grad.dot(fullstep)
+
+        prev_params = get_flat_params_from(self.actor)
+        ln_sch_success, new_params = line_search(self.actor, get_loss, prev_params, fullstep, expected_improve)
+        set_flat_params_to(self.actor, new_params)
+
+        result = {
+            'loss/critic_loss': v_loss.item(),
+            'loss/actor_loss': loss.item(),
+            'train/stochastic_reward': rewards.mean().item(),
+            'train/success': successes.item()
+        }
+        
+        return result 

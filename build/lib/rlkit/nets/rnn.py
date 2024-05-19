@@ -1,0 +1,194 @@
+import numpy as np
+import torch
+import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
+from torch.nn import functional as F
+from typing import Dict, List, Union, Tuple, Optional
+
+
+class Swish(nn.Module):
+    def __init__(self):
+        super(Swish, self).__init__()
+
+    def forward(self, x):
+        x = x * torch.sigmoid(x)
+        return x
+
+
+def soft_clamp(x : torch.Tensor, _min=None, _max=None):
+    # clamp tensor values while mataining the gradient
+    if _max is not None:
+        x = _max - F.softplus(_max - x)
+    if _min is not None:
+        x = _min + F.softplus(x - _min)
+    return x
+
+
+def identity(x):
+    return x
+
+class ResBlock(nn.Module):
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        activation=Swish(),
+        layer_norm=True,
+        with_residual=True,
+        dropout=0.1
+    ):
+        super().__init__()
+
+        self.linear = nn.Linear(input_dim, output_dim)
+        self.activation = activation
+        self.layer_norm = nn.LayerNorm(output_dim) if layer_norm else None
+        self.dropout = nn.Dropout(dropout) if dropout else None
+        self.with_residual = with_residual
+    
+    def forward(self, x):
+        y = self.activation(self.linear(x))
+        if self.dropout is not None:
+            y = self.dropout(y)
+        if self.with_residual:
+            y = x + y
+        if self.layer_norm is not None:
+            y = self.layer_norm(y)
+        return y
+
+
+class RNNModel(nn.Module):
+    def __init__(
+        self,
+        input_dim,
+        output_dim,
+        mlp_initialization = False,
+        hidden_dims=[200, 200, 200, 200],
+        rnn_num_layers=3,
+        dropout_rate=0.1,
+        device="cpu"
+    ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.hidden_dims = hidden_dims
+        self.output_dim = output_dim
+        self.device = torch.device(device)
+
+        self.activation = Swish()
+        self.rnn_layer = nn.GRU(
+            input_size=input_dim,
+            hidden_size=hidden_dims[0],
+            num_layers=rnn_num_layers,
+            batch_first=True
+        )
+        module_list = []
+        self.input_layer = ResBlock(input_dim, hidden_dims[0], dropout=dropout_rate, with_residual=False)
+        dims = list(hidden_dims)
+        for in_dim, out_dim in zip(dims[:-1], dims[1:]):
+            module_list.append(ResBlock(in_dim, out_dim, dropout=dropout_rate))
+        self.backbones = nn.ModuleList(module_list)
+        self.merge_layer = nn.Linear(dims[0] + dims[-1], hidden_dims[0])
+        self.output_layer = nn.Linear(hidden_dims[-1], output_dim)
+
+        self.to(self.device)
+
+    def forward(self, input, h_state=None):
+        batch_size, num_timesteps, _ = input.shape
+        input = torch.as_tensor(input, dtype=torch.float32).to(self.device)
+        rnn_output, h_state = self.rnn_layer(input, h_state)
+        rnn_output = rnn_output.reshape(-1, self.hidden_dims[0])
+        input = input.view(-1, self.input_dim)
+        output = self.input_layer(input)
+        output = torch.cat([output, rnn_output], dim=-1)
+        output = self.activation(self.merge_layer(output))
+        for layer in self.backbones:
+            output = layer(output)
+        output = self.output_layer(output)
+        output = output.view(batch_size, num_timesteps, -1)
+        return output, h_state
+
+
+class RecurrentEncoder(nn.Module):
+    def __init__(
+            self,
+            input_size: int,
+            hidden_size:int,
+            output_size: int,
+            rnn_initialization: bool = True,
+            output_activation=identity,
+            device="cpu"
+    ):
+        super().__init__()
+        self.input_size = input_size
+        self.rnn_hidden_dim = hidden_size
+        self.embed_dim = output_size
+
+        # input should be (task, seq, feat) and hidden should be (task, 1, feat)
+        self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
+
+        self.last_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
+        if rnn_initialization:
+            nn.init.uniform_(self.last_layer.weight, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+            nn.init.uniform_(self.last_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+
+        self.output_activation = output_activation
+        self.encoder_type = 'recurrent'
+        self.device = torch.device(device)
+
+        self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
+        self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
+
+    def forward(self, input, do_reset=True, do_pad=False):
+        if do_pad:
+            input, trj = self.pack4rnn(input)
+        else:
+            input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
+            trj, seq, fea = input.shape
+        
+        if do_reset:
+            self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
+            self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
+
+        out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
+        self.hn = hn
+        self.cn = cn
+        # take the last hidden state to predict z
+        #out = out[:, -1, :]
+
+        if do_pad:
+            out, lengths = pad_packed_sequence(out, batch_first=True)
+            trj, seq, fea = out.shape
+            output = torch.zeros((lengths.sum(), fea)).to(self.device)
+            last_length = 0
+            for i, length in enumerate(lengths):
+                output[last_length:last_length+length] = out[i, :length, :]
+                last_length += length
+            out = output
+
+        # output layer
+        preactivation = self.last_layer(out)
+        embedding = self.output_activation(preactivation)
+        return embedding.squeeze()
+
+    def pack4rnn(self, tuple):
+        obss, actions, next_obss, rewards, masks = tuple
+        trajs = []
+        lengths = []
+        prev_i = 0
+        for i, mask in enumerate(masks):
+            if mask == 0:
+                trajs.append(torch.concatenate((obss[prev_i:i+1, :], actions[prev_i:i+1, :], next_obss[prev_i:i+1, :], rewards[prev_i:i+1, :]), axis=-1))
+                lengths.append(i+1 - prev_i)
+                prev_i = i + 1    
+        # Step 1: Pad the sequences
+        padded_data = pad_sequence(trajs, batch_first=True)  # (batch_size, max_seq_len, 24)
+
+        padded_data = pack_padded_sequence(padded_data, lengths=lengths, batch_first=True, enforce_sorted=False)
+
+        batch_size = len(trajs)
+        return padded_data, batch_size
+    
+if __name__ == "__main__":
+    model = RNNModel(14, 12)
+    x = torch.randn(64, 20, 14)
+    y, _ = model(x)
+    print(y.shape)

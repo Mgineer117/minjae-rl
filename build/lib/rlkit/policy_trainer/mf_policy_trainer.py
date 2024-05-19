@@ -22,6 +22,7 @@ class MFPolicyTrainer:
     def __init__(
         self,
         policy: BasePolicy,
+        train_env: gym.Env,
         eval_env: gym.Env,
         eval_env_idx: int,
         logger: WandbLogger,
@@ -40,6 +41,7 @@ class MFPolicyTrainer:
         device=None,
     ) -> None:
         self.policy = policy
+        self.train_env = train_env
         self.eval_env = eval_env
         self.eval_env_idx = eval_env_idx
         self.buffer = buffer
@@ -48,6 +50,7 @@ class MFPolicyTrainer:
 
         self._epoch = epoch
         self._step_per_epoch = step_per_epoch
+        self._step_per_task = self._step_per_epoch / len(self.train_env)
         self._batch_size = batch_size
         self._num_traj = num_traj
         self._eval_episodes = eval_episodes
