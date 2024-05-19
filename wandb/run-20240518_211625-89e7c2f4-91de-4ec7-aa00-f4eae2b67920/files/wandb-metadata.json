@@ -1,0 +1,102 @@
+{
+    "os": "Linux-6.5.0-35-generic-x86_64-with-glibc2.35",
+    "python": "3.11.9",
+    "heartbeatAt": "2024-05-19T02:16:26.198696",
+    "startedAt": "2024-05-19T02:16:25.416488",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/home/minjae/Documents/Research/popodice/run_example/online/run_ppo.py",
+    "codePathLocal": "run_example/online/run_ppo.py",
+    "codePath": "run_example/online/run_ppo.py",
+    "host": "minjae-desktop",
+    "username": "minjae",
+    "executable": "/home/minjae/miniconda3/envs/rlkit-online/bin/python3",
+    "cpu_count": 6,
+    "cpu_count_logical": 12,
+    "cpu_freq": {
+        "current": 1624.5673333333334,
+        "min": 1550.0,
+        "max": 3400.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 1546.659,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1550.0,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1550.0,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1550.0,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1546.46,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1547.122,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1270.956,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1550.0,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 2792.999,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 2792.188,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1270.119,
+            "min": 1550.0,
+            "max": 3400.0
+        },
+        {
+            "current": 1550.0,
+            "min": 1550.0,
+            "max": 3400.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 458.9624710083008,
+            "used": 253.43452072143555
+        }
+    },
+    "gpu": "NVIDIA GeForce GTX 1060 6GB",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce GTX 1060 6GB",
+            "memory_total": 6442450944
+        }
+    ],
+    "memory": {
+        "total": 15.538589477539062
+    }
+}
