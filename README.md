@@ -42,17 +42,18 @@ To get started with this implementation, please follow the instructions below:
     ```sh
     conda create -n rlkit python==3.10.*
     ```
+3. **Install d4rl and metaworld:**
+    ```sh
+    pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
+    pip install git+https://github.com/Farama-Foundation/Metaworld.git@master#egg=metaworld
+    ```
     
-3. **Install Dependencies:**
+4. **Install Dependencies:**
     ```sh
     pip install e .
     ```
 
-4. **Install d4rl and metaworld:**
-    ```sh
-    pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
-    pip install git+https://github.com/Farama-Foundation/Metaworld.git@master#egg=metaworld
-    ```   
+
 ## Contributing
 
 Contributions are welcome! Please fork the repository and submit pull requests. For major changes, please open an issue first to discuss what you would like to change.
