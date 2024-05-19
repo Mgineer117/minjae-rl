@@ -51,9 +51,10 @@ Contributions are welcome! Please fork the repository and submit pull requests. 
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-## Acknowledgements
+## References
 
 This implementation builds on the work of many researchers and developers in the field of reinforcement learning. Special thanks to the authors of the original repositories that inspired this project.
+[OfflineRL-Kit ](https://github.com/yihaosun1124/OfflineRL-Kit)
 
 ---
 
