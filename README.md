@@ -43,12 +43,6 @@ To get started with this implementation, please follow the instructions below:
     ```sh
     pip install e .
     ```
-
-3. **Run Offline Training:**
-    ```sh
-    python offline_training.py --config config/offline_config.json
-    ```
-
 ## Contributing
 
 Contributions are welcome! Please fork the repository and submit pull requests. For major changes, please open an issue first to discuss what you would like to change.
