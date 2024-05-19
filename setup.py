@@ -12,7 +12,7 @@ setup(
         packages=find_packages(),
         platforms=["all"],
         install_requires=[
-            "gym>=0.15.4,<=0.24.1",
+            "gym>=0.15.4,<=0.26.2",
             "mujoco==2.3.3",
             "cython<3",
             "cvxpy",
