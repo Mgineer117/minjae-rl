@@ -13,8 +13,6 @@ setup(
         platforms=["all"],
         install_requires=[
             "gym>=0.15.4,<=0.24.1",
-            "git+https://github.com/Farama-Foundation/Metaworld.git@master#egg=metaworld",
-            "git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl",
             "mujoco==2.3.3",
             "cython<3",
             "matplotlib",
