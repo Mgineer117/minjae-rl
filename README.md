@@ -51,7 +51,7 @@ To get started with this implementation, please follow the instructions below:
 4. **Install d4rl and metaworld:**
     ```sh
     pip install git+https://github.com/Farama-Foundation/d4rl@master#egg=d4rl
-    pip install git+https://github.com/Farama-Foundation/Metaworld.git@04be337a12305e393c0caf0cbf5ec7755c7c8feb
+    pip install git+https://github.com/Farama-Foundation/Metaworld.git@master#egg=metaworld
     ```   
 ## Contributing
 
