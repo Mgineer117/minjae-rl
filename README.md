@@ -1,4 +1,4 @@
-# RL Implementation by Minjae
+# RL Implementation by Minjae (for my use and it is on development)
 
 Welcome to Minjae's RL Implementation repository! This project is a sophisticated reinforcement learning (RL) engine that uniquely combines both offline and online RL capabilities, setting it apart from other implementations that treat them separately.
 
@@ -35,33 +35,18 @@ To get started with this implementation, please follow the instructions below:
 
 1. **Clone the Repository:**
     ```sh
-    git clone https://github.com/minjae-rl-implementation.git
-    cd minjae-rl-implementation
+    git clone https://github.com/minjae-rl
+    cd minjae-rl
     ```
 
 2. **Install Dependencies:**
     ```sh
-    pip install -r requirements.txt
+    pip install e .
     ```
 
 3. **Run Offline Training:**
     ```sh
     python offline_training.py --config config/offline_config.json
-    ```
-
-4. **Run Online Training with PPO:**
-    ```sh
-    python online_training.py --algorithm ppo --config config/online_config.json
-    ```
-
-5. **Run Online Training with TRPO:**
-    ```sh
-    python online_training.py --algorithm trpo --config config/online_config.json
-    ```
-
-6. **Execute Multi-Task PPO:**
-    ```sh
-    python meta_rl_training.py --config config/meta_rl_config.json
     ```
 
 ## Contributing
