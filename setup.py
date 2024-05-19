@@ -15,6 +15,7 @@ setup(
             "gym>=0.15.4,<=0.24.1",
             "mujoco==2.3.3",
             "cython<3",
+            "cvxpy",
             "matplotlib",
             "h5py",
             "opencv-python",
@@ -22,7 +23,9 @@ setup(
             "pandas",
             "scikit-learn",
             #"ray==1.13.0",
-            "torch",
+            "torch==2.0.1",
+            "torchaudio==2.0.2",
+            "oauthlib>=3.0.0",
             "tensorboard",
             "tqdm",
             "wandb"
