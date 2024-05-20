@@ -116,8 +116,8 @@ class OnlineSampler:
 
             while t < episode_len:
                 with torch.no_grad():
-                    a, logprob = policy.actforward(e_s, deterministic=deterministic)
-                    a = a.numpy(); logprob = logprob.numpy()
+                    a, logprob = policy.select_action(e_s, deterministic=deterministic)
+                    #a = a.numpy(); logprob = logprob[0].numpy()
 
                 try:
                     ns, rew, term, trunc, infos = env.step(a)
@@ -140,23 +140,8 @@ class OnlineSampler:
                 except:
                     success = 0.0 
 
-                memory.push(s.numpy(), a, ns.numpy(), rew, cost, term, trunc, mask, logprob, env_idx, success)
-
-                #data['observations'][current_step+t, :] = s
-                #data['actions'][current_step+t, :] = a
-                #data['next_observations'][current_step+t, :] = ns
-                #data['rewards'][current_step+t, :] = rew
-                #data['costs'][current_step+t, :] = cost
-                #data['terminals'][current_step+t, :] = term
-                #data['timeouts'][current_step+t, :] = trunc
-                #data['masks'][current_step+t, :] = mask
-                #data['logprobs'][current_step+t, :] = logprob
-                #data['env_idxs'][current_step+t, :] = env_idx
-                
-                #try:
-                #    data['successes'][current_step+t, :] = infos['success']
-                #except:
-                #    data['successes'][current_step+t, :] = 0.0
+                #print(s[0], a[0], ns[0], rew, cost, term, trunc, mask, logprob, env_idx, success)
+                memory.push(s, a, ns, rew, cost, term, trunc, mask, logprob, env_idx, success)
 
                 t += 1
     
@@ -236,7 +221,7 @@ class OnlineSampler:
                     else:
                         worker_args = (worker_idx, queue, env, policy, self.thread_batch_size, self.episode_len,
                                         deterministic, self.running_state, i, seed)
-                        workers.append(multiprocessing.Process(target=self.collect_trajectory, args=worker_args))
+                        workers.append(multiprocessing.Process(target=self.collect_trajectory, args=worker_args, daemon=False))
         
             for worker in workers:
                 worker.start()

@@ -67,7 +67,7 @@ class PPOPolicy(BasePolicy):
         else:
             action = dist.rsample()
         logprob = dist.log_prob(action)
-        return action, logprob
+        return action, logprob[0]
 
     def select_action(
         self,
@@ -75,9 +75,9 @@ class PPOPolicy(BasePolicy):
         deterministic: bool = False
     ) -> np.ndarray:
         with torch.no_grad():
-            action, _ = self.actforward(obs, deterministic)
-        return action.cpu().numpy()
-
+            action, logprob = self.actforward(obs, deterministic)
+        return action.cpu().numpy(), logprob.cpu().numpy()
+    
     def encode_obs(self, mdp_tuple, running_state=None, env_idx = None, reset=True):
         '''
         Given mdp = (s, a, s', r, mask)
@@ -124,7 +124,7 @@ class PPOPolicy(BasePolicy):
                 embedded_next_obs = torch.concatenate((embedding, next_obs), axis=-1)
                 embedded_obs = embedded_next_obs
 
-        return obs, next_obs, embedded_obs, embedded_next_obs
+        return obs.cpu().numpy(), next_obs.cpu().numpy(), embedded_obs.cpu().numpy(), embedded_next_obs.cpu().numpy()
     
     def learn(self, batch):
         obss = torch.from_numpy(np.stack(batch.state)).to(self.device)
@@ -141,6 +141,7 @@ class PPOPolicy(BasePolicy):
         '''Update the parameters'''
         for _ in range(self._K_epochs):
             _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+            embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
 
             r_pred = self.critic(embedded_obss)
 
