@@ -26,6 +26,7 @@ class OnlineSampler:
         action_dim: int,
         episode_len: int,
         episode_num: int,
+        training_envs: list,
         running_state = None,
         track_data: bool = False,
         pomdp: list = None,
@@ -35,12 +36,18 @@ class OnlineSampler:
         self.action_dim = action_dim
         self.episode_len = episode_len
         self.episode_num = episode_num
+        self.training_envs = training_envs
         self.running_state = running_state
         self.track_data = track_data
         self.data_size = 1_000_000
         self.pomdp = pomdp
 
         self.device = torch.device(device)
+
+        self.num_worker_per_env = 1 if (self.episode_num / 2) <= 1 else math.ceil(self.episode_num / 2)
+        self.total_num_workers = int(len(self.training_envs) * self.num_worker_per_env)
+        self.thread_batch_size = int(self.episode_num * self.episode_len / self.num_worker_per_env)
+        self.queue = multiprocessing.Queue()
 
         if self.track_data:
             self.memory = dict(
@@ -207,32 +214,29 @@ class OnlineSampler:
         '''
         t_start = time.time()
         policy = self.to_device(policy)
-        num_worker_per_env = 1 if (self.episode_num / 2) <= 1 else math.ceil(self.episode_num / 2)
-        total_num_workers = int(len(training_envs) * num_worker_per_env)
-        thread_batch_size = int(self.episode_num * self.episode_len / num_worker_per_env)
         
-        if total_num_workers != 1:
-            queue = multiprocessing.Queue()
+        if self.total_num_workers != 1:
             workers = []
-            for i, env in enumerate(training_envs):
-                for j in range(num_worker_per_env):
-                    worker_idx = i*num_worker_per_env + j + 1
-                    if worker_idx == total_num_workers:
+            for i, env in enumerate(self.training_envs):
+                for j in range(self.num_worker_per_env):
+                    worker_idx = i*self.num_worker_per_env + j + 1
+                    if worker_idx == self.total_num_workers:
                         break
                     else:
-                        worker_args = (worker_idx, queue, env, policy, thread_batch_size, self.episode_len,
+                        worker_args = (worker_idx, self.queue, env, policy, self.thread_batch_size, self.episode_len,
                                         deterministic, self.running_state, i, seed)
                         workers.append(multiprocessing.Process(target=self.collect_trajectory, args=worker_args))
+        
             for worker in workers:
                 worker.start()
 
-        memory = self.collect_trajectory(0, None, training_envs[-1], policy, thread_batch_size, self.episode_len,
+        memory = self.collect_trajectory(0, None, training_envs[-1], policy, self.thread_batch_size, self.episode_len,
                                         deterministic, self.running_state, len(training_envs)-1, seed)
         
-        if total_num_workers != 1:
+        if self.total_num_workers != 1:
             worker_memories = [None] * len(workers)
             for worker in workers: 
-                pid, worker_memory = queue.get()
+                pid, worker_memory = self.queue.get()
                 worker_memories[pid - 1] = worker_memory
             for worker_memory in worker_memories:
                 for k in memory:
@@ -243,7 +247,7 @@ class OnlineSampler:
         
         for key, item in memory.items():
             memory[key] = torch.tensor(item).to(self.device)
-        
+        print(memory['observations'].shape)
         memory['sample_time'] = t_end - t_start
 
         return memory

@@ -6,7 +6,6 @@ import argparse
 import random
 import os
 
-import multiprocessing
 import numpy as np
 import torch
 
@@ -50,7 +49,7 @@ def get_args():
     parser.add_argument('--epoch', type=int, default=2000)
     parser.add_argument("--step-per-epoch", type=int, default=10)
     parser.add_argument('--episode_len', type=int, default=500)
-    parser.add_argument('--episode_num', type=int, default=1)
+    parser.add_argument('--episode_num', type=int, default=2)
     parser.add_argument("--eval_episodes", type=int, default=3)
     parser.add_argument("--rendering", type=bool, default=True)
     parser.add_argument("--import-policy", type=bool, default=False)
@@ -122,8 +121,9 @@ def train(args=get_args()):
         sampler = OnlineSampler(
             obs_shape=args.obs_shape,
             action_dim=args.action_dim,
-            episode_len= args.episode_len,
-            episode_num= args.episode_num,
+            episode_len=args.episode_len,
+            episode_num=args.episode_num,
+            training_envs=training_envs,
             running_state=running_state,
             device=args.device,
         )
@@ -157,7 +157,6 @@ def train(args=get_args()):
         # create policy trainer
         policy_trainer = MFPolicyTrainer(
             policy=policy,
-            train_env=training_envs,
             eval_env=testing_envs,
             eval_env_idx=eval_env_idx,
             sampler=sampler,

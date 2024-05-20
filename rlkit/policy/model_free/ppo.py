@@ -127,9 +127,14 @@ class PPOPolicy(BasePolicy):
         return obs, next_obs, embedded_obs, embedded_next_obs
     
     def learn(self, batch):
-        obss, actions, next_obss, rewards, masks, logprobs, env_idxs, successes = \
-            batch["observations"], batch["actions"], batch["next_observations"], \
-                batch["rewards"], batch["masks"], batch["logprobs"], batch["env_idxs"], batch["successes"]
+        obss = torch.from_numpy(np.stack(batch.state)).to(self.device)
+        actions = torch.from_numpy(np.stack(batch.action)).to(self.device)
+        next_obss = torch.from_numpy(np.stack(batch.next_state)).to(self.device)
+        rewards = torch.from_numpy(np.stack(batch.reward)).to(self.device)
+        masks = torch.from_numpy(np.stack(batch.mask)).to(self.device)
+        logprobs = torch.from_numpy(np.stack(batch.logprob)).to(self.device)
+        env_idxs = torch.from_numpy(np.stack(batch.env_idx)).to(self.device)
+        successes = torch.from_numpy(np.stack(batch.success)).to(self.device)
         
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
 

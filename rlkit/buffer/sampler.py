@@ -4,7 +4,7 @@ import math
 import h5py
 import os
 import multiprocessing
-from multiprocessing import set_start_method
+from rlkit.buffer.replay_memory import Memory
 
 import torch
 import numpy as np
@@ -47,7 +47,6 @@ class OnlineSampler:
         self.num_worker_per_env = 1 if (self.episode_num / 2) <= 1 else math.ceil(self.episode_num / 2)
         self.total_num_workers = int(len(self.training_envs) * self.num_worker_per_env)
         self.thread_batch_size = int(self.episode_num * self.episode_len / self.num_worker_per_env)
-        self.queue = multiprocessing.Queue()
 
         if self.track_data:
             self.memory = dict(
@@ -96,8 +95,9 @@ class OnlineSampler:
     def collect_trajectory(self, pid, queue, env, policy, thread_batch_size, episode_len,
                            deterministic=False, running_state=None, env_idx=0, seed=0):
         # estimate the batch size
-        batch_size = thread_batch_size + episode_len
-        data = self.get_reset_data(batch_size=batch_size)
+        #batch_size = thread_batch_size + episode_len
+        #data = self.get_reset_data(batch_size=batch_size)
+        memory = Memory()
         current_step = 0
         while current_step < thread_batch_size:
             # initialization
@@ -135,20 +135,28 @@ class OnlineSampler:
 
                 _returns += rew
 
-                data['observations'][current_step+t, :] = s
-                data['actions'][current_step+t, :] = a
-                data['next_observations'][current_step+t, :] = ns
-                data['rewards'][current_step+t, :] = rew
-                data['costs'][current_step+t, :] = cost
-                data['terminals'][current_step+t, :] = term
-                data['timeouts'][current_step+t, :] = trunc
-                data['masks'][current_step+t, :] = mask
-                data['logprobs'][current_step+t, :] = logprob
-                data['env_idxs'][current_step+t, :] = env_idx
                 try:
-                    data['successes'][current_step+t, :] = infos['success']
+                    success = infos['success']
                 except:
-                    data['successes'][current_step+t, :] = 0.0
+                    success = 0.0 
+
+                memory.push(s.numpy(), a, ns.numpy(), rew, cost, term, trunc, mask, logprob, env_idx, success)
+
+                #data['observations'][current_step+t, :] = s
+                #data['actions'][current_step+t, :] = a
+                #data['next_observations'][current_step+t, :] = ns
+                #data['rewards'][current_step+t, :] = rew
+                #data['costs'][current_step+t, :] = cost
+                #data['terminals'][current_step+t, :] = term
+                #data['timeouts'][current_step+t, :] = trunc
+                #data['masks'][current_step+t, :] = mask
+                #data['logprobs'][current_step+t, :] = logprob
+                #data['env_idxs'][current_step+t, :] = env_idx
+                
+                #try:
+                #    data['successes'][current_step+t, :] = infos['success']
+                #except:
+                #    data['successes'][current_step+t, :] = 0.0
 
                 t += 1
     
@@ -161,7 +169,7 @@ class OnlineSampler:
                     except:
                         s = env.reset(seed=seed)
                     break
-
+        '''
         memory = dict(
             observations=data['observations'].astype(np.float32),
             actions=data['actions'].astype(np.float32),
@@ -175,6 +183,7 @@ class OnlineSampler:
             env_idxs=data['env_idxs'].astype(np.int32),
             successes=data['successes'].astype(np.float32),
         )
+        
         if self.track_data:
             for k in self.memory:
                 self.memory[k].extend(memory[k])
@@ -190,6 +199,7 @@ class OnlineSampler:
 
         for k in memory:
             memory[k] = memory[k][:thread_batch_size]
+        '''                        
         if queue is not None:
             queue.put([pid, memory])
         else:
@@ -202,7 +212,7 @@ class OnlineSampler:
         policy.encoder.device = device
         return policy
 
-    def collect_samples(self, training_envs, policy, seed, deterministic=False):
+    def collect_samples(self, policy, seed, deterministic=False):
         '''
         It is designed for one worker to work on two episodes, and one worker at least is assigned for each env. 
         At least one worker for one env,
@@ -217,39 +227,42 @@ class OnlineSampler:
         
         if self.total_num_workers != 1:
             workers = []
+            queue = multiprocessing.Manager().Queue()
             for i, env in enumerate(self.training_envs):
                 for j in range(self.num_worker_per_env):
                     worker_idx = i*self.num_worker_per_env + j + 1
                     if worker_idx == self.total_num_workers:
                         break
                     else:
-                        worker_args = (worker_idx, self.queue, env, policy, self.thread_batch_size, self.episode_len,
+                        worker_args = (worker_idx, queue, env, policy, self.thread_batch_size, self.episode_len,
                                         deterministic, self.running_state, i, seed)
                         workers.append(multiprocessing.Process(target=self.collect_trajectory, args=worker_args))
         
             for worker in workers:
                 worker.start()
 
-        memory = self.collect_trajectory(0, None, training_envs[-1], policy, self.thread_batch_size, self.episode_len,
-                                        deterministic, self.running_state, len(training_envs)-1, seed)
+        memory = self.collect_trajectory(0, None, self.training_envs[-1], policy, self.thread_batch_size, self.episode_len,
+                                        deterministic, self.running_state, len(self.training_envs)-1, seed)
         
         if self.total_num_workers != 1:
             worker_memories = [None] * len(workers)
             for worker in workers: 
-                pid, worker_memory = self.queue.get()
+                pid, worker_memory = queue.get()
                 worker_memories[pid - 1] = worker_memory
-            for worker in workers:
-                worker.join()
+            '''                
             for worker_memory in worker_memories:
                 for k in memory:
                     memory[k] = np.concatenate((memory[k], worker_memory[k]), axis=0)
-                    
+            '''
+            for worker_memory in worker_memories:
+                memory.append(worker_memory)
+        batch = memory.sample()     
+
         policy = self.to_device(policy, self.device)
         t_end = time.time()
-        
+        '''
         for key, item in memory.items():
             memory[key] = torch.tensor(item).to(self.device)
-        
-        memory['sample_time'] = t_end - t_start
+        '''
 
-        return memory
+        return batch, t_end - t_start

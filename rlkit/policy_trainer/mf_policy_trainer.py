@@ -132,8 +132,8 @@ class MFPolicyTrainer:
             self.current_epoch = e
             self.policy.train()
             for it in trange(self._step_per_epoch, desc=f"Training", leave=False):
-                batch = self.sampler.collect_samples(self.train_env, self.policy, seed)
-                loss = self.policy.learn(batch); loss['sample_time'] = batch['sample_time']
+                batch, sample_time = self.sampler.collect_samples(self.policy, seed)
+                loss = self.policy.learn(batch); loss['sample_time'] = sample_time
                 self.logger.store(**loss)
                 self.logger.write_without_reset(int(e*self._step_per_epoch + it))
 
