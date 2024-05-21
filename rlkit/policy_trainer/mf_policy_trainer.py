@@ -35,6 +35,7 @@ class MFPolicyTrainer:
         buffer: ReplayBuffer = None,
         sampler: OnlineSampler = None,
         obs_dim: int = None,
+        action_dim: int = None,
         pomdp: list = None,
         import_policy: bool = False,
         device=None,
@@ -53,7 +54,8 @@ class MFPolicyTrainer:
         self._eval_episodes = eval_episodes
         self.lr_scheduler = lr_scheduler
 
-        self.obs_dim = obs_dim[0]        
+        self.obs_dim = obs_dim
+        self.action_dim = action_dim        
         self.pomdp = pomdp
 
         self._device = device
@@ -188,17 +190,16 @@ class MFPolicyTrainer:
     def _evaluate(self, seed) -> Dict[str, List[float]]:
         self.policy.eval()
         try:
-            obs, _ = self.eval_env.reset(seed=seed)
+            s, _ = self.eval_env.reset(seed=seed)
         except:
-            obs = self.eval_env.reset(seed=seed)
-        obs = self.normalize_obs(obs)
-        action = np.zeros((np.prod(self.eval_env.action_space.shape), ))
-        next_obs = obs # initialization
-        reward = 0.0
-        mask = 1.0
+            s = self.eval_env.reset(seed=seed)
+        s = self.normalize_obs(s)
+        a = np.zeros((self.action_dim, ))
+        ns = s # initialization
         
+        mdp = (s, a, ns, np.array([0]), np.array([1]))
         with torch.no_grad():
-            obs, _, e_obs, _ = self.policy.encode_obs((obs, action, next_obs, [reward], mask), env_idx=self.eval_env_idx)
+            s, _, e_s, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx)
 
         eval_ep_info_buffer = []
         num_episodes = 0
@@ -206,31 +207,36 @@ class MFPolicyTrainer:
 
         while num_episodes < self._eval_episodes:
             with torch.no_grad():
-                action = self.policy.select_action(e_obs, deterministic=True) #(obs).reshape(1,-1)
+                a, _ = self.policy.select_action(e_s, deterministic=True) #(obs).reshape(1,-1)
             try:
-                next_obs, reward, trunc, terminal, infos = self.eval_env.step(action.flatten())
-                done = terminal or trunc
+                ns, rew, trunc, term, infos = self.eval_env.step(a.flatten())
+                done = term or trunc
             except:
-                next_obs, reward, terminal, infos = self.eval_env.step(action.flatten())
-                done = terminal
+                ns, rew, term, infos = self.eval_env.step(a.flatten())
+                done = term
+            try:
+                success = infos['success']
+            except:
+                success = 0.0
+            mask = 0 if done else 1
             
             if self.rendering:
                 if num_episodes == 0:
                     self.recorded_frames.append(self.eval_env.render())
             
-            episode_reward += reward
-            try:
-                episode_success += infos['success']
-            except:
-                episode_success += 0.0
+            episode_reward += rew
+            episode_success += success
             episode_length += 1
             
-            next_obs = self.normalize_obs(next_obs)
+            # state encoding
+            ns = self.normalize_obs(ns)
+
+            mdp = (s, a, ns, np.array([rew]), np.array([mask]))
             with torch.no_grad():
-                _, next_obs, _, e_next_obs = self.policy.encode_obs((obs, action, next_obs, [reward], mask), env_idx=self.eval_env_idx, reset=False)
+                _, ns, _, e_ns = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=False)
             
-            obs = next_obs
-            e_obs = e_next_obs
+            s = ns
+            e_s = e_ns
 
             if done:
                 eval_ep_info_buffer.append(
@@ -239,9 +245,9 @@ class MFPolicyTrainer:
                 num_episodes +=1
                 episode_reward, episode_length = 0, 0
                 try:
-                    obs, _ = self.eval_env.reset(seed=seed)
+                    s, _ = self.eval_env.reset(seed=seed)
                 except:
-                    obs = self.eval_env.reset(seed=seed)
+                    s = self.eval_env.reset(seed=seed)
 
         if self.current_epoch % self.log_interval == 0:
             if self.rendering:

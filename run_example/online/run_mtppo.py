@@ -165,7 +165,8 @@ def train(args=get_args()):
             step_per_epoch=args.step_per_epoch,
             eval_episodes=args.eval_episodes,
             rendering=args.rendering,
-            obs_dim=args.obs_shape,
+            obs_dim=args.obs_shape[0],
+            action_dim=args.action_dim,
             import_policy=args.import_policy,
             device=args.device,
         )

@@ -79,7 +79,7 @@ class OnlineSampler:
         self.rounds = rounds
         
         print('Sampling parameters...')
-        print(f'num_worker_per_round {self.num_workers_per_round}')
+        print(f'Core usage = {self.num_workers_per_round[0]}/{self.num_cores}')
         print(f'num_env_per_round {self.num_env_per_round}')
         print(f'episodes_per_worker {self.episodes_per_worker}')
         torch.set_num_threads(1) # enforce one task for each worker to avoide CPU overscription.
@@ -125,13 +125,12 @@ class OnlineSampler:
             except:
                 s = env.reset(seed=seed)
             
-            # create mdp for encoding process. all element should have dimension (1,) than scaler
-            a = np.zeros((self.action_dim, ))
-            ns = s
             # normalizing state
             if self.running_state is not None:
                 s = self.running_state(s)
-                ns = self.running_state(ns)
+            # create mdp for encoding process. all element should have dimension (1,) than scaler
+            a = np.zeros((self.action_dim, ))
+            ns = s
 
             mdp = (s, a, ns, np.array([0]), np.array([1]))
 
@@ -162,9 +161,9 @@ class OnlineSampler:
                 if self.running_state is not None:
                     ns = self.running_state(ns)
 
-                # state encodding
+                # state encoding
+                mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
-                    mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                     _, ns, _, e_ns = policy.encode_obs(mdp, env_idx=env_idx, reset=False)
 
                 s = ns; e_s = e_ns
