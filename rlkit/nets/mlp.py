@@ -66,7 +66,7 @@ class OneHotEncoder(BaseEncoder):
         self.device = torch.device(device)
 
     def __call__(self, obs, env_idx=None):
-        #obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
+        obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
         if len(obs.shape) == 1:
             obs = obs[None, :]
         embedding = torch.zeros((obs.shape[0], self.embed_dim)).to(self.device)

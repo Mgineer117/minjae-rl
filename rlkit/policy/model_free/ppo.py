@@ -78,33 +78,38 @@ class PPOPolicy(BasePolicy):
             action, logprob = self.actforward(obs, deterministic)
         return action.cpu().numpy(), logprob.cpu().numpy()
     
-    def encode_obs(self, mdp_tuple, running_state=None, env_idx = None, reset=True):
+    def encode_obs(self, mdp_tuple, env_idx = None, reset=True):
         '''
         Given mdp = (s, a, s', r, mask)
         return embedding, embedded_next_obs = embedding is attached to the next_ob
           since it should include the information of reward and transition dynamics
+        It should handle both tensor and numpy since some do not have network embedding but some do.
+        All encoders take input in tensors
+        Hence, we transform to tensor for all cases but return as tensor if is_batch else as numpy
         '''
         obs, actions, next_obs, rewards, masks = mdp_tuple
-        if running_state is not None:
-            obs = running_state(obs)
-            next_obs = running_state(next_obs)
         # check dimension
         is_batch = True if len(obs.shape) > 1 else False
+
+        # transform to tensor
         obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
         actions = torch.as_tensor(actions, device=self.device, dtype=torch.float32)
         next_obs = torch.as_tensor(next_obs, device=self.device, dtype=torch.float32)
         rewards = torch.as_tensor(rewards, device=self.device, dtype=torch.float32)
-        masks = torch.as_tensor(masks, device=self.device, dtype=torch.float32)
+        masks = torch.as_tensor(masks, device=self.device, dtype=torch.int32)
 
         if self.encoder.encoder_type == 'none':
+            # skip embedding
             embedding = None
             embedded_obs = obs
             embedded_next_obs = next_obs
+            return obs, next_obs, embedded_obs, embedded_next_obs
         elif self.encoder.encoder_type == 'onehot':
             obs_embedding = self.encoder(obs, env_idx)
             next_obs_embedding = self.encoder(next_obs, env_idx)
             embedded_obs = torch.concatenate((obs_embedding, obs), axis=-1) 
             embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
+            return obs, next_obs, embedded_obs, embedded_next_obs
         elif self.encoder.encoder_type == 'recurrent':
             if is_batch:
                 t_obs = torch.concatenate((obs[0][None, :], obs), axis=0)
@@ -117,24 +122,26 @@ class PPOPolicy(BasePolicy):
                 embedding = self.encoder(mdp, do_pad=True)
                 embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
                 embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
+                return obs, next_obs, embedded_obs, embedded_next_obs
             else:
                 mdp = torch.concatenate((obs, actions, next_obs, rewards), axis=-1)
                 mdp = mdp[None, None, :]
                 embedding = self.encoder(mdp, do_reset=reset)
                 embedded_next_obs = torch.concatenate((embedding, next_obs), axis=-1)
                 embedded_obs = embedded_next_obs
-
-        return obs.cpu().numpy(), next_obs.cpu().numpy(), embedded_obs.cpu().numpy(), embedded_next_obs.cpu().numpy()
+                return obs, next_obs, embedded_obs, embedded_next_obs
+        else:
+            NotImplementedError
     
     def learn(self, batch):
-        obss = torch.from_numpy(np.stack(batch.state)).to(self.device)
-        actions = torch.from_numpy(np.stack(batch.action)).to(self.device)
-        next_obss = torch.from_numpy(np.stack(batch.next_state)).to(self.device)
-        rewards = torch.from_numpy(np.stack(batch.reward)).to(self.device)
-        masks = torch.from_numpy(np.stack(batch.mask)).to(self.device)
-        logprobs = torch.from_numpy(np.stack(batch.logprob)).to(self.device)
-        env_idxs = torch.from_numpy(np.stack(batch.env_idx)).to(self.device)
-        successes = torch.from_numpy(np.stack(batch.success)).to(self.device)
+        obss = torch.from_numpy(batch['observations']).to(self.device)
+        actions = torch.from_numpy(batch['actions']).to(self.device)
+        next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
+        rewards = torch.from_numpy(batch['rewards']).to(self.device)
+        masks = torch.from_numpy(batch['masks']).to(self.device)
+        logprobs = torch.from_numpy(batch['logprobs']).to(self.device)
+        env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
+        successes = torch.from_numpy(batch['successes']).to(self.device)
         
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
 
