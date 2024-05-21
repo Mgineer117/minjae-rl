@@ -86,7 +86,19 @@ class OnlineSampler:
         torch.set_num_threads(1) # enforce one task for each worker to avoide CPU overscription.
 
         if self.data_num is not None:
-            self.track_data = self.get_reset_data(self.data_num)
+            # to create an enough batch..
+            self.data_buffer = self.get_reset_data(self.data_num+self.episode_len)
+            self.buffer_last_idx = 0
+
+    def save_buffer(self):
+        for k in self.data_buffer:
+            self.data_buffer[k] = self.data_buffer[k][:self.data_num]
+        print('mean reward: ',np.mean(self.data_buffer['rewards']))
+        print('mean cost: ',np.mean(self.data_buffer['costs']))
+        hfile = h5py.File('data.h5py', 'w')
+        for k in self.data_buffer:
+            hfile.create_dataset(k, data=self.data_buffer[k], compression='gzip')
+        hfile.close()
 
     def get_reset_data(self, batch_size):
         '''
@@ -204,10 +216,18 @@ class OnlineSampler:
             terminals=data['terminals'].astype(np.int32),
             timeouts=data['timeouts'].astype(np.int32),
             masks=data['masks'].astype(np.int32),
-            logprobs=data['logprobs'].astype(np.int32),
+            logprobs=data['logprobs'].astype(np.float32),
             env_idxs=data['env_idxs'].astype(np.int32),
-            successes=data['successes'].astype(np.float32),
+            successes=data['successes'].astype(np.int32),
         )
+
+        if self.data_num is not None:
+            for k in memory:
+                self.data_buffer[k][self.buffer_last_idx:self.buffer_last_idx+current_step, :] = memory[k] 
+            self.buffer_last_idx += current_step
+            if self.buffer_last_idx >= self.data_num:
+                self.save_buffer()
+                self.data_num = None
 
         for k in memory:
             memory[k] = memory[k][:thread_batch_size]

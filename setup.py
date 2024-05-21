@@ -9,7 +9,7 @@ setup(
         author='Minjae Cho',
         author_email='minjae5@illinois.edu',
         maintainer='Mgineer117',
-        packages=find_packages(),
+#        packages=find_packages(),
         platforms=["all"],
         install_requires=[
             "gym>=0.15.4,<=0.26.2",
