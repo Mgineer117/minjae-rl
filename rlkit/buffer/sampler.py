@@ -233,10 +233,10 @@ class OnlineSampler:
         env_idx = 0
         worker_idx = 0
         for round_number in range(self.rounds):
-            print(f"Starting round {round_number + 1}/{self.rounds}")
+            #print(f"Starting round {round_number + 1}/{self.rounds}")
             processes = []
             
-            print(f'indices: {env_idx}<->{env_idx+self.num_env_per_round[round_number]}')
+            #print(f'indices: {env_idx}<->{env_idx+self.num_env_per_round[round_number]}')
             envs = self.training_envs[env_idx:env_idx+self.num_env_per_round[round_number]]
             for env in envs:
                 workers_for_env = self.num_workers_per_round[round_number] // len(envs)
