@@ -75,6 +75,7 @@ def train(args=get_args()):
             action_dim=args.action_dim,
             episode_len= args.episode_len,
             episode_num= args.episode_num,
+            training_envs=training_envs,
             running_state=running_state,
             device=args.device,
         )
@@ -120,7 +121,6 @@ def train(args=get_args()):
         # create policy trainer
         policy_trainer = MFPolicyTrainer(
             policy=policy,
-            train_env=training_envs,
             eval_env=testing_envs,
             eval_env_idx=eval_env_idx,
             sampler=sampler,
@@ -129,7 +129,8 @@ def train(args=get_args()):
             step_per_epoch=args.step_per_epoch,
             eval_episodes=args.eval_episodes,
             rendering=args.rendering,
-            obs_dim=args.obs_shape,
+            obs_dim=args.obs_shape[0],
+            action_dim=args.action_dim,
             import_policy=args.import_policy,
             device=args.device,
         )

@@ -65,7 +65,6 @@ def train(args=get_args()):
 
         # create env and dataset
         args.task = '-'.join((args.env_type, args.agent_type))
-        args.rendering_path = args.task
         training_envs, testing_envs, eval_env_idx = load_env(args.task, args.task_name, args.task_num, render_mode='rgb_array')
 
         # create policy model
@@ -99,13 +98,6 @@ def train(args=get_args()):
             sigma_max=2.0
         )
 
-        args.embed_dim = len(training_envs)
-        encoder = BaseEncoder(
-            embed_dim=args.embed_dim,
-            device = args.device
-        )
-        encoder_optim = None
-
         actor = ActorProb(actor_backbone,
                           dist_net=dist,
                           device=args.device)   
@@ -119,8 +111,6 @@ def train(args=get_args()):
             actor_optim=actor_optim,
             critic=critic,
             critic_optim=critic_optim,
-            encoder=encoder,
-            encoder_optim=encoder_optim,
             K_epochs=args.K_epochs,
             eps_clip=args.eps_clip,
             device=args.device

@@ -60,12 +60,12 @@ def train(args=get_args()):
     args.device = select_device()
     
     for seed in args.seeds:
+        # seed
+        seed_all(seed)
+
         # create env and dataset
         args.task = '-'.join((args.env_type, args.agent_type))
         training_envs, testing_envs, eval_env_idx = load_env(args.task, args.task_name, args.task_num)
-
-        # seed
-        seed_all(seed)
 
         # create policy model
         '''state dimension input manipulation for Ss only'''
@@ -94,17 +94,6 @@ def train(args=get_args()):
             encoder_optim = None
             args.embed_dim = 0
         
-        running_state = ZFilter(args.obs_shape, clip=5)
-
-        sampler = OnlineSampler(
-            obs_shape=args.obs_shape,
-            action_dim=args.action_dim,
-            episode_len= args.episode_len,
-            episode_num= args.episode_num,
-            running_state=running_state,
-            device=args.device,
-        )
-
         actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh)
         critic_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), activation=torch.nn.Tanh, hidden_dims=args.hidden_dims)
         
@@ -122,6 +111,18 @@ def train(args=get_args()):
                 
         critic = Critic(critic_backbone, device = args.device)
         critic_optim = torch.optim.LBFGS(critic.parameters(), lr=args.critic_lr, max_iter=20)
+
+        running_state = ZFilter(args.obs_shape, clip=5)
+
+        sampler = OnlineSampler(
+            obs_shape=args.obs_shape,
+            action_dim=args.action_dim,
+            episode_len= args.episode_len,
+            episode_num= args.episode_num,
+            training_envs=training_envs,
+            running_state=running_state,
+            device=args.device,
+        )
         
         policy = TRPOPolicy(
             actor=actor,
@@ -146,7 +147,6 @@ def train(args=get_args()):
         # create policy trainer
         policy_trainer = MFPolicyTrainer(
             policy=policy,
-            train_env=training_envs,
             eval_env=testing_envs,
             eval_env_idx=eval_env_idx,
             sampler=sampler,
@@ -154,7 +154,7 @@ def train(args=get_args()):
             epoch=args.epoch,
             step_per_epoch=args.step_per_epoch,
             eval_episodes=args.eval_episodes,
-            obs_dim=args.obs_shape,
+            obs_dim=args.obs_shape[0],
             device=args.device,
         )
 

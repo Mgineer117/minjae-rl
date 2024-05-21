@@ -33,7 +33,10 @@ class PPOPolicy(BasePolicy):
         self.actor_optim = actor_optim
         self.critic = critic
         self.critic_optim = critic_optim
-        self.encoder = encoder
+        if encoder is not None:
+            self.encoder = encoder
+        else:
+            self.encoder = BaseEncoder(device=device)
         self.encoder_optim = encoder_optim
 
         self.loss_fn = torch.nn.MSELoss()
@@ -59,7 +62,6 @@ class PPOPolicy(BasePolicy):
         self,
         obs: torch.Tensor,
         deterministic: bool = False,
-        reset: bool = True,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         dist = self.actor(obs)
         if deterministic:

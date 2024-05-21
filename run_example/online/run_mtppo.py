@@ -129,8 +129,6 @@ def train(args=get_args()):
             running_state=running_state,
             device=args.device,
         )
-        '''Add encoder and implement to predict inside the sampler before the final return'''
-        '''manipulate the dim size according to the use of this encoder'''
         
         # define combinatory policy
         policy = PPOPolicy(

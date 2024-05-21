@@ -66,7 +66,10 @@ class TRPOPolicy(BasePolicy):
         self.actor = actor
         self.critic = critic
         self.critic_optim = critic_optim
-        self.encoder = encoder
+        if encoder is not None:
+            self.encoder = encoder
+        else:
+            self.encoder = BaseEncoder(device=device)
         self.encoder_optim = encoder_optim
 
         self.loss_fn = torch.nn.MSELoss()
@@ -99,7 +102,7 @@ class TRPOPolicy(BasePolicy):
         else:
             action = dist.rsample()
         logprob = dist.log_prob(action)
-        return action, logprob
+        return action, logprob[0]
 
     def select_action(
         self,
@@ -107,36 +110,41 @@ class TRPOPolicy(BasePolicy):
         deterministic: bool = False
     ) -> np.ndarray:
         with torch.no_grad():
-            action, _ = self.actforward(obs, deterministic)
-        return action.cpu().numpy()
+            action, logprob = self.actforward(obs, deterministic)
+        return action.cpu().numpy(), logprob.cpu().numpy()
 
-    def encode_obs(self, mdp_tuple, running_state=None, env_idx = None, reset=True):
+    def encode_obs(self, mdp_tuple, env_idx = None, reset=True):
         '''
         Given mdp = (s, a, s', r, mask)
         return embedding, embedded_next_obs = embedding is attached to the next_ob
           since it should include the information of reward and transition dynamics
+        It should handle both tensor and numpy since some do not have network embedding but some do.
+        All encoders take input in tensors
+        Hence, we transform to tensor for all cases but return as tensor if is_batch else as numpy
         '''
         obs, actions, next_obs, rewards, masks = mdp_tuple
-        if running_state is not None:
-            obs = running_state(obs)
-            next_obs = running_state(next_obs)
         # check dimension
         is_batch = True if len(obs.shape) > 1 else False
+
+        # transform to tensor
         obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
         actions = torch.as_tensor(actions, device=self.device, dtype=torch.float32)
         next_obs = torch.as_tensor(next_obs, device=self.device, dtype=torch.float32)
         rewards = torch.as_tensor(rewards, device=self.device, dtype=torch.float32)
-        masks = torch.as_tensor(masks, device=self.device, dtype=torch.float32)
+        masks = torch.as_tensor(masks, device=self.device, dtype=torch.int32)
 
         if self.encoder.encoder_type == 'none':
+            # skip embedding
             embedding = None
             embedded_obs = obs
             embedded_next_obs = next_obs
+            return obs, next_obs, embedded_obs, embedded_next_obs
         elif self.encoder.encoder_type == 'onehot':
             obs_embedding = self.encoder(obs, env_idx)
             next_obs_embedding = self.encoder(next_obs, env_idx)
             embedded_obs = torch.concatenate((obs_embedding, obs), axis=-1) 
             embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
+            return obs, next_obs, embedded_obs, embedded_next_obs
         elif self.encoder.encoder_type == 'recurrent':
             if is_batch:
                 t_obs = torch.concatenate((obs[0][None, :], obs), axis=0)
@@ -149,20 +157,25 @@ class TRPOPolicy(BasePolicy):
                 embedding = self.encoder(mdp, do_pad=True)
                 embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
                 embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
+                return obs, next_obs, embedded_obs, embedded_next_obs
             else:
                 mdp = torch.concatenate((obs, actions, next_obs, rewards), axis=-1)
                 mdp = mdp[None, None, :]
                 embedding = self.encoder(mdp, do_reset=reset)
                 embedded_next_obs = torch.concatenate((embedding, next_obs), axis=-1)
                 embedded_obs = embedded_next_obs
-
-        return obs, next_obs, embedded_obs, embedded_next_obs
+                return obs, next_obs, embedded_obs, embedded_next_obs
+        else:
+            NotImplementedError
     
     def learn(self, batch):
-        obss, actions, next_obss, rewards, masks, env_idxs, successes = \
-            batch["observations"], batch["actions"], batch["next_observations"], \
-                batch["rewards"], batch["masks"], batch["env_idxs"], batch["successes"]
-        #successes = torch.sum(successes) / len(torch.where(masks == 0.0)[0])
+        obss = torch.from_numpy(batch['observations']).to(self.device)
+        actions = torch.from_numpy(batch['actions']).to(self.device)
+        next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
+        rewards = torch.from_numpy(batch['rewards']).to(self.device)
+        masks = torch.from_numpy(batch['masks']).to(self.device)
+        env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
+        successes = torch.from_numpy(batch['successes']).to(self.device)
 
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
         _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
@@ -176,7 +189,7 @@ class TRPOPolicy(BasePolicy):
         """update critic"""
         def closure():
             self.critic_optim.zero_grad()
-            r_pred = self.critic(obss)
+            r_pred = self.critic(embedded_obss)
             v_loss = self.loss_fn(r_pred, returns)
             for param in self.critic.parameters():
                 v_loss += param.pow(2).sum() * self._l2_reg
@@ -186,25 +199,25 @@ class TRPOPolicy(BasePolicy):
         self.critic_optim.step(closure)
 
         with torch.no_grad():
-            r_pred = self.critic(obss)
+            r_pred = self.critic(embedded_obss)
 
         v_loss = self.loss_fn(r_pred, returns)
 
         """update policy"""
         with torch.no_grad():
-            dist = self.actor(obss)
+            dist = self.actor(embedded_obss)
             fixed_log_probs = dist.log_prob(actions)
 
         def get_loss(volatile=False):
             with torch.set_grad_enabled(not volatile):
-                dist = self.actor(obss)
+                dist = self.actor(embedded_obss)
                 log_probs = dist.log_prob(actions)
                 action_loss = -advantages * torch.exp(log_probs - fixed_log_probs)
                 return action_loss.mean()
             
         """directly compute Hessian*vector from KL"""
         def Fvp_direct(v):
-            kl = self.actor.get_kl(obss)
+            kl = self.actor.get_kl(embedded_obss)
             kl = kl.mean()
 
             grads = torch.autograd.grad(kl, self.actor.parameters(), create_graph=True)
@@ -236,7 +249,7 @@ class TRPOPolicy(BasePolicy):
             'loss/critic_loss': v_loss.item(),
             'loss/actor_loss': loss.item(),
             'train/stochastic_reward': rewards.mean().item(),
-            'train/success': successes.item()
+            'train/success': successes.mean().item()
         }
         
         return result 
