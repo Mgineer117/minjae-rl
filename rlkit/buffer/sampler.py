@@ -218,7 +218,7 @@ class OnlineSampler:
             masks=data['masks'].astype(np.int32),
             logprobs=data['logprobs'].astype(np.float32),
             env_idxs=data['env_idxs'].astype(np.int32),
-            successes=data['successes'].astype(np.int32),
+            successes=data['successes'].astype(np.float32),
         )
 
         if self.data_num is not None:
