@@ -218,10 +218,11 @@ class MFPolicyTrainer:
                 success = infos['success']
             except:
                 success = 0.0
+            
             mask = 0 if done else 1
             
-            if self.rendering:
-                if num_episodes == 0:
+            if self.current_epoch % self.log_interval == 0:
+                if self.rendering or num_episodes == 0:
                     self.recorded_frames.append(self.eval_env.render())
             
             episode_reward += rew

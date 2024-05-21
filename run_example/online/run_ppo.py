@@ -45,7 +45,7 @@ def get_args():
     parser.add_argument("--actor-lr", type=float, default=1e-4)
     parser.add_argument("--critic-lr", type=float, default=1e-3)
     parser.add_argument('--epoch', type=int, default=2000)
-    parser.add_argument("--step-per-epoch", type=int, default=50)
+    parser.add_argument("--step-per-epoch", type=int, default=1)
     parser.add_argument('--episode_len', type=int, default=1000)
     parser.add_argument('--episode_num', type=int, default=4)
     parser.add_argument("--eval_episodes", type=int, default=3)
