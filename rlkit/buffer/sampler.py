@@ -77,11 +77,12 @@ class OnlineSampler:
         self.episodes_per_worker = episodes_per_worker
         self.thread_batch_size = self.episodes_per_worker * self.episode_len
         self.rounds = rounds
-        
-        print('Sampling parameters...')
-        print(f'Core usage = {self.num_workers_per_round[0]}/{self.num_cores}')
-        print(f'num_env_per_round {self.num_env_per_round}')
-        print(f'episodes_per_worker {self.episodes_per_worker}')
+
+        print('Sampling Parameters:')
+        print('--------------------')
+        print(f'Core usage for this run           : {self.num_workers_per_round[0]}/{self.num_cores}')
+        print(f'Number of Environments each Round : {self.num_env_per_round}')
+        print(f'Episodes per Worker               : {self.episodes_per_worker}')
         torch.set_num_threads(1) # enforce one task for each worker to avoide CPU overscription.
 
         if self.data_num is not None:
