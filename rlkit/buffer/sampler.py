@@ -69,17 +69,20 @@ class OnlineSampler:
         self.device = torch.device(device)
 
         # Preprocess for multiprocessing to avoid CPU overscription and deadlock
-        self.num_cores = num_cores = multiprocessing.cpu_count() #torch.get_num_threads()
-        num_worker_per_round, num_env_per_round, episodes_per_worker, rounds = calculate_workers_and_rounds(self.training_envs, self.episode_num, self.num_cores)
+        self.num_cores = multiprocessing.cpu_count() #torch.get_num_threads()
+        num_workers_per_round, num_env_per_round, episodes_per_worker, rounds = calculate_workers_and_rounds(self.training_envs, self.episode_num, self.num_cores)
         
-        self.num_workers_per_round = num_worker_per_round
+        self.num_workers_per_round = num_workers_per_round
         self.num_env_per_round = num_env_per_round
         self.episodes_per_worker = episodes_per_worker
         self.thread_batch_size = self.episodes_per_worker * self.episode_len
         self.rounds = rounds
-
-        print(f'Setting num_threads to {int(self.num_cores/self.num_workers_per_round[0])}/{self.num_cores}')
-        torch.set_num_threads(int(self.num_cores/self.num_workers_per_round[0]))
+        
+        print('Sampling parameters...')
+        print(f'num_worker_per_round {self.num_workers_per_round}')
+        print(f'num_env_per_round {self.num_env_per_round}')
+        print(f'episodes_per_worker {self.episodes_per_worker}')
+        torch.set_num_threads(1) # enforce one task for each worker to avoide CPU overscription.
 
         if self.data_num is not None:
             self.track_data = self.get_reset_data(self.data_num)
