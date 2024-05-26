@@ -1,0 +1,52 @@
+[36mSaving config:
+{
+    "action_dim":	"1",
+    "actor_hidden_dims":	[
+        256,
+        256
+    ],
+    "agent_type":	"InvertedPendulum",
+    "algo_name":	"trpo",
+    "critic_lr":	0.0001,
+    "data_num":	1000000,
+    "device":	"cpu",
+    "env_type":	"Gym",
+    "episode_len":	1000,
+    "episode_num":	6,
+    "epoch":	2000,
+    "eval_episodes":	3,
+    "grad_norm":	false,
+    "group":	"Gym-InvertedPendulum-seed-0",
+    "hidden_dims":	[
+        256,
+        256
+    ],
+    "import_policy":	false,
+    "logdir":	"log/trpo-696f-seed0/Gym-InvertedPendulum-seed-0",
+    "max_action":	"3.0",
+    "name":	"trpo-696f-seed0",
+    "obs_shape":	[
+        4
+    ],
+    "pklfile":	null,
+    "project":	"data-collect",
+    "rendering":	false,
+    "seed":	0,
+    "step_per_epoch":	1,
+    "task":	"Gym-InvertedPendulum",
+    "task_name":	null,
+    "task_num":	3,
+    "verbose":	true
+}
+Epoch:   0%|                                                                                        | 0/2000 [00:00<?, ?it/s]
+  gym.logger.warn(
+Epoch:   0%|                                                                              | 1/2000 [00:03<2:07:45,  3.83s/it]
+
+Epoch:   0%|                                                                              | 3/2000 [00:11<2:10:30,  3.92s/it]
+
+Epoch:   2%|█▌                                                                           | 41/2000 [02:09<1:48:55,  3.34s/it]
+Training:   0%|                                                                                        | 0/1 [00:00<?, ?it/s]
+data saved!!
+mean reward:  1.0
+
+

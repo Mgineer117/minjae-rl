@@ -1,0 +1,65 @@
+project: data-collect
+name: trpo-696f-seed0
+task: Gym-InvertedPendulum
+algo_name: trpo
+group: Gym-InvertedPendulum-seed-0
+logdir: log/trpo-696f-seed0/Gym-InvertedPendulum-seed-0
+env_type: Gym
+agent_type: InvertedPendulum
+task_name: null
+task_num: 3
+seed: 0
+pklfile: null
+actor_hidden_dims: &id001 !!python/tuple
+- 256
+- 256
+hidden_dims: *id001
+critic_lr: 0.0001
+epoch: 2000
+step_per_epoch: 1
+episode_len: 1000
+episode_num: 6
+eval_episodes: 3
+grad_norm: false
+rendering: false
+data_num: 1000000
+import_policy: false
+verbose: true
+device: !!python/object/apply:torch.device
+- cpu
+obs_shape: !!python/tuple
+- 4
+action_dim: !!python/object/apply:numpy.core.multiarray.scalar
+- !!python/object/apply:numpy.dtype
+    args:
+    - i8
+    - false
+    - true
+    state: !!python/tuple
+    - 3
+    - <
+    - null
+    - null
+    - null
+    - -1
+    - -1
+    - 0
+- !!binary |
+    AQAAAAAAAAA=
+max_action: !!python/object/apply:numpy.core.multiarray.scalar
+- !!python/object/apply:numpy.dtype
+    args:
+    - f4
+    - false
+    - true
+    state: !!python/tuple
+    - 3
+    - <
+    - null
+    - null
+    - null
+    - -1
+    - -1
+    - 0
+- !!binary |
+    AABAQA==

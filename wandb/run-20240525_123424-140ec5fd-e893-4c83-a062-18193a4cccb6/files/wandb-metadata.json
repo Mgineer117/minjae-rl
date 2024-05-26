@@ -1,0 +1,80 @@
+{
+    "os": "Linux-6.5.0-28-generic-x86_64-with-glibc2.35",
+    "python": "3.10.14",
+    "heartbeatAt": "2024-05-25T17:34:24.798169",
+    "startedAt": "2024-05-25T17:34:24.326652",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data.py",
+    "codePathLocal": "collect_data.py",
+    "codePath": "collect_data.py",
+    "git": {
+        "remote": "https://github.com/Mgineer117/minjae-rl",
+        "commit": "c1f961ceab2a8510b9cdf66700efd7d87d830368"
+    },
+    "email": null,
+    "root": "/home/minjae/Documents/Minjae/Research/minjae-rl",
+    "host": "minjae-950XDB-951XDB-950XDY",
+    "username": "minjae",
+    "executable": "/home/minjae/miniconda3/envs/rl/bin/python3",
+    "cpu_count": 4,
+    "cpu_count_logical": 8,
+    "cpu_freq": {
+        "current": 4002.8281249999995,
+        "min": 400.0,
+        "max": 4700.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3785.771,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3719.809,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 4098.421,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 4217.767,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3886.155,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 4276.227,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3938.475,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 4100.0,
+            "min": 400.0,
+            "max": 4700.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 918.5437927246094,
+            "used": 209.01829528808594
+        }
+    },
+    "memory": {
+        "total": 15.292098999023438
+    }
+}

@@ -1,0 +1,80 @@
+{
+    "os": "Linux-6.5.0-28-generic-x86_64-with-glibc2.35",
+    "python": "3.10.14",
+    "heartbeatAt": "2024-05-25T21:59:33.225427",
+    "startedAt": "2024-05-25T21:59:32.600487",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data/trpo_collect.py",
+    "codePathLocal": "collect_data/trpo_collect.py",
+    "codePath": "collect_data/trpo_collect.py",
+    "git": {
+        "remote": "https://github.com/Mgineer117/minjae-rl",
+        "commit": "c1f961ceab2a8510b9cdf66700efd7d87d830368"
+    },
+    "email": null,
+    "root": "/home/minjae/Documents/Minjae/Research/minjae-rl",
+    "host": "minjae-950XDB-951XDB-950XDY",
+    "username": "minjae",
+    "executable": "/home/minjae/miniconda3/envs/rl/bin/python3",
+    "cpu_count": 4,
+    "cpu_count_logical": 8,
+    "cpu_freq": {
+        "current": 2539.495375,
+        "min": 400.0,
+        "max": 4700.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 2799.984,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 2802.1,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 2707.185,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 2776.809,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 2800.0,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 2799.992,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 2786.087,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 2217.981,
+            "min": 400.0,
+            "max": 4700.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 918.5437927246094,
+            "used": 204.96318817138672
+        }
+    },
+    "memory": {
+        "total": 15.292098999023438
+    }
+}

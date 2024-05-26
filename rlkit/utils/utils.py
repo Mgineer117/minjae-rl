@@ -93,4 +93,4 @@ def estimate_constraint_value(costs, masks, gamma, device):
             
     constraint_value = constraint_value/traj_num
     constraint_value = constraint_value.to(device)
-    return constraint_value
+    return constraint_value[0]

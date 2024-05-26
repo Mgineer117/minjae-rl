@@ -11,7 +11,7 @@ import torch
 
 from rlkit.utils.utils import seed_all, select_device
 from rlkit.nets import MLP, RNNModel, RecurrentEncoder, BaseEncoder
-from rlkit.modules import ActorProb, Critic, DistCritic, PhiNetwork, DiagGaussian
+from rlkit.modules import ActorProb, Critic, DistCritic, DiagGaussian
 from rlkit.utils.load_dataset import qlearning_dataset
 from rlkit.utils.load_env import load_env
 from rlkit.utils.zfilter import ZFilter
@@ -38,6 +38,7 @@ def get_args():
 
     '''Algorithmic and sampling parameters'''
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
+    parser.add_argument('--num-cores', type=int, default=None)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--K-epochs", type=int, default=5)
@@ -82,6 +83,7 @@ def train(args=get_args()):
             episode_num=args.episode_num,
             training_envs=training_envs,
             running_state=running_state,
+            num_cores=args.num_cores,
             device=args.device,
         )
 

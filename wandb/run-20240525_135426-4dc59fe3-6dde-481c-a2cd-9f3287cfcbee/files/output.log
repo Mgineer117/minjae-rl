@@ -1,0 +1,45 @@
+Epoch:   0%|                                                                                                    | 0/100 [00:00<?, ?it/s]
+Training:   0%|                                                                                                  | 0/10 [00:00<?, ?it/s]
+[36mSaving config:
+{
+    "action_dim":	"1",
+    "actor_hidden_dims":	[
+        256,
+        256
+    ],
+    "actor_lr":	0.0001,
+    "agent_type":	"InvertedPendulum",
+    "algo_name":	"ppo",
+    "critic_lr":	0.003,
+    "d_k":	10.0,
+    "data_num":	1000000,
+    "device":	"cpu",
+    "env_type":	"Gym",
+    "episode_len":	1000,
+    "episode_num":	2,
+    "epoch":	100,
+    "eval_episodes":	3,
+    "grad_norm":	true,
+    "group":	"Gym-InvertedPendulum-seed-0",
+    "hidden_dims":	[
+        256,
+        256
+    ],
+    "import_policy":	false,
+    "logdir":	"log/ppo-f9ab-seed0/Gym-InvertedPendulum-seed-0",
+    "max_action":	"3.0",
+    "name":	"ppo-f9ab-seed0",
+    "obs_shape":	[
+        4
+    ],
+    "project":	"osrl-test",
+    "rendering":	true,
+    "seed":	0,
+    "step_per_epoch":	10,
+    "task":	"Gym-InvertedPendulum",
+    "task_name":	null,
+    "task_num":	1,
+    "verbose":	true
+
+
+

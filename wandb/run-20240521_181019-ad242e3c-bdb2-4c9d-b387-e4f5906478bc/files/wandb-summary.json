@@ -1,0 +1,1 @@
+{"loss/critic_loss": 79.06294250488281, "loss/actor_loss": 39.4688835144043, "train/stochastic_reward": 0.5168904066085815, "train/success": 0.0, "sample_time": 49.39247155189514, "_timestamp": 1716333072.177184, "_runtime": 52.73434901237488, "_step": 0}

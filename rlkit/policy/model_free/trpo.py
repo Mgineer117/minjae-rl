@@ -59,6 +59,7 @@ class TRPOPolicy(BasePolicy):
             max_kl: float = 1e-3,
             damping: float = 1e-2,
             l2_reg: float = 1e-4,
+            grad_norm: bool = False,
             device = None
             ):
         super().__init__()
@@ -79,6 +80,7 @@ class TRPOPolicy(BasePolicy):
         self._max_kl = max_kl
         self._damping = damping
         self._l2_reg = l2_reg
+        self.grad_norm = grad_norm
 
         self.param_size = sum(p.numel() for p in self.actor.parameters())
         self.device = device
@@ -234,7 +236,10 @@ class TRPOPolicy(BasePolicy):
         loss = get_loss()
         grads = torch.autograd.grad(loss, self.actor.parameters())
         loss_grad = torch.cat([grad.view(-1) for grad in grads]).detach()
+        if self.grad_norm:
+            loss_grad = loss_grad/torch.norm(loss_grad)
         stepdir = conjugate_gradients(Fvp, -loss_grad, 10, device=self.device)
+
 
         shs = 0.5 * (stepdir.dot(Fvp(stepdir)))
         lm = math.sqrt(self._max_kl / shs)

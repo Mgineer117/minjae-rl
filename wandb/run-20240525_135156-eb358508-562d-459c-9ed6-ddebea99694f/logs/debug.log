@@ -1,0 +1,28 @@
+2024-05-25 13:51:56,388 INFO    MainThread:180353 [wandb_setup.py:_flush():76] Current SDK version is 0.16.6
+2024-05-25 13:51:56,388 INFO    MainThread:180353 [wandb_setup.py:_flush():76] Configure stats pid to 180353
+2024-05-25 13:51:56,388 INFO    MainThread:180353 [wandb_setup.py:_flush():76] Loading settings from /home/minjae/.config/wandb/settings
+2024-05-25 13:51:56,388 INFO    MainThread:180353 [wandb_setup.py:_flush():76] Loading settings from /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/settings
+2024-05-25 13:51:56,388 INFO    MainThread:180353 [wandb_setup.py:_flush():76] Loading settings from environment variables: {}
+2024-05-25 13:51:56,388 INFO    MainThread:180353 [wandb_setup.py:_flush():76] Applying setup settings: {'_disable_service': False}
+2024-05-25 13:51:56,388 INFO    MainThread:180353 [wandb_setup.py:_flush():76] Inferring run settings from compute environment: {'program_relpath': 'collect_data/cpo_collect.py', 'program_abspath': '/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data/cpo_collect.py', 'program': '/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data/cpo_collect.py'}
+2024-05-25 13:51:56,389 INFO    MainThread:180353 [wandb_setup.py:_flush():76] Applying login settings: {}
+2024-05-25 13:51:56,389 INFO    MainThread:180353 [wandb_init.py:_log_setup():521] Logging user logs to /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_135156-eb358508-562d-459c-9ed6-ddebea99694f/logs/debug.log
+2024-05-25 13:51:56,389 INFO    MainThread:180353 [wandb_init.py:_log_setup():522] Logging internal logs to /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_135156-eb358508-562d-459c-9ed6-ddebea99694f/logs/debug-internal.log
+2024-05-25 13:51:56,389 INFO    MainThread:180353 [wandb_init.py:init():561] calling init triggers
+2024-05-25 13:51:56,389 INFO    MainThread:180353 [wandb_init.py:init():568] wandb.init called with sweep_config: {}
+config: {'project': 'osrl-test', 'name': 'ppo-dba6-seed0', 'task': 'Gym-InvertedPendulum', 'algo_name': 'ppo', 'group': 'Gym-InvertedPendulum-seed-0', 'logdir': 'log/ppo-dba6-seed0/Gym-InvertedPendulum-seed-0', 'env_type': 'Gym', 'agent_type': 'InvertedPendulum', 'task_name': None, 'task_num': 1, 'seed': 0, 'actor_hidden_dims': (256, 256), 'hidden_dims': (256, 256), 'actor_lr': 0.0001, 'critic_lr': 0.003, 'd_k': 10.0, 'epoch': 100, 'step_per_epoch': 10, 'episode_len': 1000, 'episode_num': 2, 'eval_episodes': 3, 'grad_norm': True, 'rendering': True, 'data_num': 1000000, 'import_policy': False, 'verbose': True, 'device': device(type='cpu'), 'obs_shape': (4,), 'action_dim': 1, 'max_action': 3.0}
+2024-05-25 13:51:56,389 INFO    MainThread:180353 [wandb_init.py:init():611] starting backend
+2024-05-25 13:51:56,389 INFO    MainThread:180353 [wandb_init.py:init():615] setting up manager
+2024-05-25 13:51:56,391 INFO    MainThread:180353 [backend.py:_multiprocessing_setup():105] multiprocessing start_methods=fork,spawn,forkserver, using: spawn
+2024-05-25 13:51:56,393 INFO    MainThread:180353 [wandb_init.py:init():623] backend started and connected
+2024-05-25 13:51:56,397 INFO    MainThread:180353 [wandb_init.py:init():715] updated telemetry
+2024-05-25 13:51:56,405 INFO    MainThread:180353 [wandb_init.py:init():748] communicating run to backend with 90.0 second timeout
+2024-05-25 13:51:56,944 INFO    MainThread:180353 [wandb_run.py:_on_init():2357] communicating current version
+2024-05-25 13:51:57,101 INFO    MainThread:180353 [wandb_run.py:_on_init():2366] got version response upgrade_message: "wandb version 0.17.0 is available!  To upgrade, please run:\n $ pip install wandb --upgrade"
+
+2024-05-25 13:51:57,102 INFO    MainThread:180353 [wandb_init.py:init():799] starting run threads in backend
+2024-05-25 13:51:59,059 INFO    MainThread:180353 [wandb_run.py:_console_start():2335] atexit reg
+2024-05-25 13:51:59,060 INFO    MainThread:180353 [wandb_run.py:_redirect():2190] redirect: wrap_raw
+2024-05-25 13:51:59,060 INFO    MainThread:180353 [wandb_run.py:_redirect():2255] Wrapping output streams.
+2024-05-25 13:51:59,060 INFO    MainThread:180353 [wandb_run.py:_redirect():2280] Redirects installed.
+2024-05-25 13:51:59,061 INFO    MainThread:180353 [wandb_init.py:init():842] run started, returning control to user process

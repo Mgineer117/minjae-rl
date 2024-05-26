@@ -1,0 +1,80 @@
+{
+    "os": "Linux-6.5.0-28-generic-x86_64-with-glibc2.35",
+    "python": "3.10.14",
+    "heartbeatAt": "2024-05-24T00:20:34.385024",
+    "startedAt": "2024-05-24T00:20:33.355034",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data.py",
+    "codePathLocal": "collect_data.py",
+    "codePath": "collect_data.py",
+    "git": {
+        "remote": "https://github.com/Mgineer117/minjae-rl",
+        "commit": "c1f961ceab2a8510b9cdf66700efd7d87d830368"
+    },
+    "email": null,
+    "root": "/home/minjae/Documents/Minjae/Research/minjae-rl",
+    "host": "minjae-950XDB-951XDB-950XDY",
+    "username": "minjae",
+    "executable": "/home/minjae/miniconda3/envs/rl/bin/python",
+    "cpu_count": 4,
+    "cpu_count_logical": 8,
+    "cpu_freq": {
+        "current": 3998.819625,
+        "min": 400.0,
+        "max": 4700.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 4085.587,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3932.255,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 4100.015,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 617.911,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3318.741,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 3396.422,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 4100.0,
+            "min": 400.0,
+            "max": 4700.0
+        },
+        {
+            "current": 1089.457,
+            "min": 400.0,
+            "max": 4700.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 918.5437927246094,
+            "used": 209.48477935791016
+        }
+    },
+    "memory": {
+        "total": 15.292102813720703
+    }
+}

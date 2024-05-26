@@ -1,0 +1,49 @@
+Epoch:   0%|                                                                                                             | 0/2000 [00:00<?, ?it/s]
+Training:   0%|                                                                                                             | 0/1 [00:00<?, ?it/s]
+[36mSaving config:
+{
+    "K_epochs":	5,
+    "action_dim":	"4",
+    "actor_hidden_dims":	[
+        256,
+        256
+    ],
+    "actor_lr":	0.0001,
+    "agent_type":	"MT1",
+    "algo_name":	"ppo",
+    "critic_lr":	0.001,
+    "device":	"cpu",
+    "env_type":	"MetaGym",
+    "episode_len":	1000,
+    "episode_num":	4,
+    "epoch":	2000,
+    "eps_clip":	0.2,
+    "eval_episodes":	3,
+    "group":	"MetaGym-MT1-seed-1",
+    "hidden_dims":	[
+        256,
+        256
+    ],
+    "import_policy":	false,
+    "logdir":	"log/ppo-485b-seed1/MetaGym-MT1-seed-1",
+    "max_action":	"1.0",
+    "name":	"ppo-485b-seed1",
+    "obs_shape":	[
+        39
+    ],
+    "project":	"purpose",
+    "rendering":	true,
+    "seeds":	[
+        1,
+        3,
+        5,
+        7,
+        9
+    ],
+    "step_per_epoch":	1,
+    "task":	"MetaGym-MT1",
+    "task_name":	"lever-pull",
+    "task_num":	1,
+    "verbose":	true
+}
+

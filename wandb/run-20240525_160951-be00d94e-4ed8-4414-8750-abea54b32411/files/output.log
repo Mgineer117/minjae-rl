@@ -1,0 +1,284 @@
+[36mSaving config:
+{
+    "action_dim":	"1",
+    "actor_hidden_dims":	[
+        256,
+        256
+    ],
+    "agent_type":	"InvertedPendulum",
+    "algo_name":	"trpo",
+    "critic_lr":	0.003,
+    "data_num":	1000000,
+    "device":	"cpu",
+    "env_type":	"Gym",
+    "episode_len":	1000,
+    "episode_num":	2,
+    "epoch":	2000,
+    "eval_episodes":	3,
+    "grad_norm":	false,
+    "group":	"Gym-InvertedPendulum-seed-0",
+    "hidden_dims":	[
+        256,
+        256
+    ],
+    "import_policy":	false,
+    "logdir":	"log/trpo-f94b-seed0/Gym-InvertedPendulum-seed-0",
+    "max_action":	"3.0",
+    "name":	"trpo-f94b-seed0",
+    "obs_shape":	[
+        4
+    ],
+    "pklfile":	null,
+    "project":	"data-collect",
+    "rendering":	false,
+    "seed":	0,
+    "step_per_epoch":	10,
+    "task":	"Gym-InvertedPendulum",
+    "task_name":	null,
+    "task_num":	3,
+    "verbose":	true
+}
+Epoch:   0%|                                                                                 | 0/2000 [00:00<?, ?it/s]
+
+
+
+
+
+
+
+
+
+  gym.logger.warn(
+Epoch:   0%|                                                                      | 1/2000 [00:24<13:33:50, 24.43s/it]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Epoch:   1%|▌                                                                    | 18/2000 [07:40<13:52:59, 25.22s/it]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Traceback (most recent call last):
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data/trpo_collect.py", line 149, in <module>
+    train()
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data/trpo_collect.py", line 145, in train
+    policy_trainer.online_train(args.seed)
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/../minjae-rl/rlkit/policy_trainer/mf_policy_trainer.py", line 138, in online_train
+    loss = self.policy.learn(batch); loss['sample_time'] = sample_time
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/../minjae-rl/rlkit/policy/model_free/trpo.py", line 250, in learn
+    ln_sch_success, new_params = line_search(self.actor, get_loss, prev_params, fullstep, expected_improve)
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/../minjae-rl/rlkit/policy/model_free/trpo.py", line 37, in line_search
+    fval_new = f(True).item()
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/../minjae-rl/rlkit/policy/model_free/trpo.py", line 215, in get_loss
+    dist = self.actor(embedded_obss)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/../minjae-rl/rlkit/modules/actor_module.py", line 90, in forward
+    dist = self.dist_net(logits)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/../minjae-rl/rlkit/modules/dist_module.py", line 127, in forward
+    return NormalWrapper(mu, sigma)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/site-packages/torch/distributions/normal.py", line 56, in __init__
+    super().__init__(batch_shape, validate_args=validate_args)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/site-packages/torch/distributions/distribution.py", line 68, in __init__
+    raise ValueError(
+ValueError: Expected parameter loc (Tensor of shape (2000, 1)) of distribution NormalWrapper(loc: torch.Size([2000, 1]), scale: torch.Size([2000, 1])) to satisfy the constraint Real(), but found invalid values:
+tensor([[nan],
+        [nan],
+        [nan],
+        ...,
+        [nan],
+        [nan],
+        [nan]])

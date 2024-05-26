@@ -40,6 +40,7 @@ def get_args():
     parser.add_argument("--embed-type", type=str, default='purpose') # onehot or purpose
     parser.add_argument("--embed-dim", type=int, default=5) # one-hot or purpose
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
+    parser.add_argument('--num-cores', type=int, default=None)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--K-epochs", type=int, default=1)
@@ -127,6 +128,7 @@ def train(args=get_args()):
             episode_num=args.episode_num,
             training_envs=training_envs,
             running_state=running_state,
+            num_cores=args.num_cores,
             device=args.device,
         )
         

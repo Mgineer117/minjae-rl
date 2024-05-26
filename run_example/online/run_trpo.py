@@ -35,7 +35,7 @@ def get_args():
     parser.add_argument('--task-num', type=int, default=3) # 10, 45, 50
 
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
-    parser.add_argument('--pklfile', type=str, default=None)
+    parser.add_argument('--num-cores', type=int, default=None)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--critic-lr", type=float, default=1e-3)
@@ -77,6 +77,7 @@ def train(args=get_args()):
             episode_num= args.episode_num,
             training_envs=training_envs,
             running_state=running_state,
+            num_cores=args.num_cores,
             device=args.device,
         )
 
@@ -98,7 +99,7 @@ def train(args=get_args()):
                           device=args.device)   
                 
         critic = Critic(critic_backbone, device = args.device)
-        critic_optim = torch.optim.LBFGS(critic.parameters(), lr=args.critic_lr, max_iter=20)
+        critic_optim = torch.optim.LBFGS(critic.parameters(), lr=args.critic_lr, max_iter=10)
         
         policy = TRPOPolicy(
             actor=actor,

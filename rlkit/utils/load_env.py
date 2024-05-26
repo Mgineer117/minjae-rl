@@ -69,43 +69,43 @@ def load_env(key, task: str = None, task_num: int = None, render_mode: str = 'rg
         task_name = '-'.join((task, 'v2'))
 
     if key == 'Gym-Ant':
-        training_envs = [gym.make('Ant-v4')]
+        training_envs = [gym.make('Ant-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
     elif key == 'Gym-HalfCheetah':
-        training_envs = [gym.make('HalfCheetah-v4')]
+        training_envs = [gym.make('HalfCheetah-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
     elif key == 'Gym-Hopper':
-        training_envs = [gym.make('Hopper-v4')]
+        training_envs = [gym.make('Hopper-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
     elif key == 'Gym-Humanoid-Standup':
-        training_envs = [gym.make('HumanoidStandup-v4')]
+        training_envs = [gym.make('HumanoidStandup-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
     elif key == 'Gym-Humanoid':
-        training_envs = [gym.make('Humanoid-v4')]
+        training_envs = [gym.make('Humanoid-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
     elif key == 'Gym-InvertedDoublePendulum':
-        training_envs = [gym.make('InvertedDoublePendulum-v4')]
+        training_envs = [gym.make('InvertedDoublePendulum-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
     elif key == 'Gym-InvertedPendulum':
-        training_envs = [gym.make('InvertedPendulum-v4')]
+        training_envs = [gym.make('InvertedPendulum-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
     elif key == 'Gym-Reacher':
-        training_envs = [gym.make('Reacher-v4')]
+        training_envs = [gym.make('Reacher-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
     elif key == 'Gym-Swimmer':
-        training_envs = [gym.make('Swimmer-v4')]
+        training_envs = [gym.make('Swimmer-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
     elif key == 'Gym-Walker':
-        training_envs = [gym.make('Walker-v4')]
+        training_envs = [gym.make('Walker-v4', render_mode=render_mode)]
         eval_env_idx = 0
         testing_envs = training_envs[eval_env_idx]
 

@@ -134,6 +134,7 @@ class MFPolicyTrainer:
             self.current_epoch = e
             self.policy.train()
             for it in trange(self._step_per_epoch, desc=f"Training", leave=False):
+                #print(self.sampler.running_state.rs.mean, self.sampler.running_state.rs.std)
                 batch, sample_time = self.sampler.collect_samples(self.policy, seed)
                 loss = self.policy.learn(batch); loss['sample_time'] = sample_time
                 self.logger.store(**loss)
@@ -177,11 +178,10 @@ class MFPolicyTrainer:
         return {"last_10_performance": np.mean(last_10_performance)}
     
     def normalize_obs(self, obs):
-        if self.sampler is not None: # check if it is online training
-            if self.sampler.running_state is not None: # check if there is running state enabled
-                self.sampler.running_state.fix = True
-                obs = self.sampler.running_state(obs)
-                self.sampler.running_state.fix = False
+        if self.sampler.running_state is not None: # check if there is running state enabled
+            self.sampler.running_state.fix = True
+            obs = self.sampler.running_state(obs)
+            self.sampler.running_state.fix = False
         elif self.buffer is not None: # check if it is offline training
             if self.buffer._obs_normalized: # check if obs is normalized
                 obs = (obs - self.buffer.obs_mean) / (self.buffer.obs_std + 1e-10)

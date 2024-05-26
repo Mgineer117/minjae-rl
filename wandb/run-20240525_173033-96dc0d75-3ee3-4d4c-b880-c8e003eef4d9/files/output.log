@@ -1,0 +1,45 @@
+[36mSaving config:
+{
+    "action_dim":	"1",
+    "actor_hidden_dims":	[
+        256,
+        256
+    ],
+    "agent_type":	"InvertedPendulum",
+    "algo_name":	"trpo",
+    "critic_lr":	0.0001,
+    "data_num":	1000000,
+    "device":	"cpu",
+    "env_type":	"Gym",
+    "episode_len":	1000,
+    "episode_num":	2,
+    "epoch":	2000,
+    "eval_episodes":	3,
+    "grad_norm":	false,
+    "group":	"Gym-InvertedPendulum-seed-0",
+    "hidden_dims":	[
+        256,
+        256
+    ],
+    "import_policy":	false,
+    "logdir":	"log/trpo-26d2-seed0/Gym-InvertedPendulum-seed-0",
+    "max_action":	"3.0",
+    "name":	"trpo-26d2-seed0",
+    "obs_shape":	[
+        4
+    ],
+    "pklfile":	null,
+    "project":	"data-collect",
+    "rendering":	false,
+    "seed":	0,
+    "step_per_epoch":	1,
+    "task":	"Gym-InvertedPendulum",
+    "task_name":	null,
+    "task_num":	3,
+    "verbose":	true
+}
+Epoch:   0%|                                                                                                   | 0/2000 [00:00<?, ?it/s]
+Training:   0%|                                                                                                   | 0/1 [00:00<?, ?it/s]
+
+Backend TkAgg is interactive backend. Turning interactive mode on.
+[ 0.003 -0.005 -0.009 -0.01 ]

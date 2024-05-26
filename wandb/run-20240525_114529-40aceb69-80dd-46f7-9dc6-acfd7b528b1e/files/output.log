@@ -1,0 +1,93 @@
+[36mSaving config:
+{
+    "K_epochs":	5,
+    "action_dim":	"1",
+    "actor_hidden_dims":	[
+        256,
+        256
+    ],
+    "actor_lr":	0.0001,
+    "agent_type":	"InvertedPendulum",
+    "algo_name":	"ppo",
+    "critic_lr":	0.001,
+    "data_num":	1000000,
+    "device":	"cpu",
+    "env_type":	"Gym",
+    "episode_len":	500,
+    "episode_num":	2,
+    "epoch":	100,
+    "eps_clip":	0.2,
+    "eval_episodes":	3,
+    "group":	"Gym-InvertedPendulum-seed-0",
+    "hidden_dims":	[
+        256,
+        256
+    ],
+    "import_policy":	false,
+    "logdir":	"log/ppo-0e60-seed0/Gym-InvertedPendulum-seed-0",
+    "max_action":	"3.0",
+    "name":	"ppo-0e60-seed0",
+    "obs_shape":	[
+        4
+    ],
+    "project":	"osrl-test",
+    "rendering":	false,
+    "seed":	0,
+    "step_per_epoch":	10,
+    "task":	"Gym-InvertedPendulum",
+    "task_name":	null,
+    "task_num":	1,
+    "verbose":	true
+}
+data buffer: 2000/1000000
+Epoch:   0%|                                                                               | 0/100 [00:00<?, ?it/s]
+
+
+
+
+  gym.logger.warn(
+Epoch:   1%|▋                                                                      | 1/100 [00:06<10:01,  6.08s/it]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Traceback (most recent call last):
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data.py", line 153, in <module>
+    train()
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data.py", line 149, in train
+    policy_trainer.online_train(args.seed)
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/rlkit/policy_trainer/mf_policy_trainer.py", line 137, in online_train
+    batch, sample_time = self.sampler.collect_samples(self.policy, seed)
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/rlkit/buffer/sampler.py", line 266, in collect_samples
+    p.join()
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/multiprocessing/process.py", line 149, in join
+    res = self._popen.wait(timeout)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/multiprocessing/popen_fork.py", line 43, in wait
+    return self.poll(os.WNOHANG if timeout == 0.0 else 0)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/multiprocessing/popen_fork.py", line 27, in poll
+    pid, sts = os.waitpid(self.pid, flag)
+
+data buffer: 48000/1000000

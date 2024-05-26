@@ -1,0 +1,58 @@
+2024-05-25 17:27:27,114 INFO    StreamThr :364928 [internal.py:wandb_internal():86] W&B internal server running at pid: 364928, started at: 2024-05-25 17:27:27.113503
+2024-05-25 17:27:27,116 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: status
+2024-05-25 17:27:27,118 INFO    WriterThread:364928 [datastore.py:open_for_write():87] open: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/run-2d7cd68b-0321-4e48-a565-697be20e8e9d.wandb
+2024-05-25 17:27:27,120 DEBUG   SenderThread:364928 [sender.py:send():379] send: header
+2024-05-25 17:27:27,125 DEBUG   SenderThread:364928 [sender.py:send():379] send: run
+2024-05-25 17:27:27,138 INFO    SenderThread:364928 [sender.py:_setup_resume():749] checking resume status for None/data-collect/2d7cd68b-0321-4e48-a565-697be20e8e9d
+2024-05-25 17:27:27,576 INFO    SenderThread:364928 [dir_watcher.py:__init__():211] watching files in: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files
+2024-05-25 17:27:27,576 INFO    SenderThread:364928 [sender.py:_start_run_threads():1124] run started: 2d7cd68b-0321-4e48-a565-697be20e8e9d with start time 1716676047.112604
+2024-05-25 17:27:27,591 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: check_version
+2024-05-25 17:27:27,591 DEBUG   SenderThread:364928 [sender.py:send_request():406] send_request: check_version
+2024-05-25 17:27:27,773 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: run_start
+2024-05-25 17:27:27,774 DEBUG   HandlerThread:364928 [system_info.py:__init__():26] System info init
+2024-05-25 17:27:27,774 DEBUG   HandlerThread:364928 [system_info.py:__init__():41] System info init done
+2024-05-25 17:27:27,774 INFO    HandlerThread:364928 [system_monitor.py:start():194] Starting system monitor
+2024-05-25 17:27:27,775 INFO    HandlerThread:364928 [system_monitor.py:probe():214] Collecting system info
+2024-05-25 17:27:27,775 INFO    SystemMonitor:364928 [system_monitor.py:_start():158] Starting system asset monitoring threads
+2024-05-25 17:27:27,776 INFO    SystemMonitor:364928 [interfaces.py:start():190] Started cpu monitoring
+2024-05-25 17:27:27,777 INFO    SystemMonitor:364928 [interfaces.py:start():190] Started disk monitoring
+2024-05-25 17:27:27,778 INFO    SystemMonitor:364928 [interfaces.py:start():190] Started memory monitoring
+2024-05-25 17:27:27,781 INFO    SystemMonitor:364928 [interfaces.py:start():190] Started network monitoring
+2024-05-25 17:27:27,787 DEBUG   HandlerThread:364928 [system_info.py:probe():150] Probing system
+2024-05-25 17:27:27,789 DEBUG   HandlerThread:364928 [system_info.py:_probe_git():135] Probing git
+2024-05-25 17:27:27,798 DEBUG   HandlerThread:364928 [system_info.py:_probe_git():143] Probing git done
+2024-05-25 17:27:27,798 DEBUG   HandlerThread:364928 [system_info.py:probe():198] Probing system done
+2024-05-25 17:27:27,798 DEBUG   HandlerThread:364928 [system_monitor.py:probe():223] {'os': 'Linux-6.5.0-28-generic-x86_64-with-glibc2.35', 'python': '3.10.14', 'heartbeatAt': '2024-05-25T22:27:27.787631', 'startedAt': '2024-05-25T22:27:27.105717', 'docker': None, 'cuda': None, 'args': (), 'state': 'running', 'program': '/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data/trpo_collect.py', 'codePathLocal': 'collect_data/trpo_collect.py', 'codePath': 'collect_data/trpo_collect.py', 'git': {'remote': 'https://github.com/Mgineer117/minjae-rl', 'commit': 'c1f961ceab2a8510b9cdf66700efd7d87d830368'}, 'email': None, 'root': '/home/minjae/Documents/Minjae/Research/minjae-rl', 'host': 'minjae-950XDB-951XDB-950XDY', 'username': 'minjae', 'executable': '/home/minjae/miniconda3/envs/rl/bin/python', 'cpu_count': 4, 'cpu_count_logical': 8, 'cpu_freq': {'current': 4100.008250000001, 'min': 400.0, 'max': 4700.0}, 'cpu_freq_per_core': [{'current': 4017.899, 'min': 400.0, 'max': 4700.0}, {'current': 3801.796, 'min': 400.0, 'max': 4700.0}, {'current': 4100.0, 'min': 400.0, 'max': 4700.0}, {'current': 3281.648, 'min': 400.0, 'max': 4700.0}, {'current': 1682.367, 'min': 400.0, 'max': 4700.0}, {'current': 3150.822, 'min': 400.0, 'max': 4700.0}, {'current': 4099.986, 'min': 400.0, 'max': 4700.0}, {'current': 2926.501, 'min': 400.0, 'max': 4700.0}], 'disk': {'/': {'total': 918.5437927246094, 'used': 205.06806564331055}}, 'memory': {'total': 15.292098999023438}}
+2024-05-25 17:27:27,798 INFO    HandlerThread:364928 [system_monitor.py:probe():224] Finished collecting system info
+2024-05-25 17:27:27,798 INFO    HandlerThread:364928 [system_monitor.py:probe():227] Publishing system info
+2024-05-25 17:27:27,798 DEBUG   HandlerThread:364928 [system_info.py:_save_conda():207] Saving list of conda packages installed into the current environment
+2024-05-25 17:27:28,586 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_created():271] file/dir created: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/conda-environment.yaml
+2024-05-25 17:27:29,568 DEBUG   HandlerThread:364928 [system_info.py:_save_conda():222] Saving conda packages done
+2024-05-25 17:27:29,571 INFO    HandlerThread:364928 [system_monitor.py:probe():229] Finished publishing system info
+2024-05-25 17:27:29,576 DEBUG   SenderThread:364928 [sender.py:send():379] send: files
+2024-05-25 17:27:29,577 INFO    SenderThread:364928 [sender.py:_save_file():1390] saving file wandb-metadata.json with policy now
+2024-05-25 17:27:29,578 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_modified():288] file/dir modified: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/conda-environment.yaml
+2024-05-25 17:27:29,578 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_created():271] file/dir created: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/wandb-metadata.json
+2024-05-25 17:27:29,887 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: python_packages
+2024-05-25 17:27:29,888 DEBUG   SenderThread:364928 [sender.py:send_request():406] send_request: python_packages
+2024-05-25 17:27:29,889 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: stop_status
+2024-05-25 17:27:29,889 DEBUG   SenderThread:364928 [sender.py:send_request():406] send_request: stop_status
+2024-05-25 17:27:29,893 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: internal_messages
+2024-05-25 17:27:29,962 INFO    wandb-upload_0:364928 [upload_job.py:push():131] Uploaded file /tmp/tmpvkes6itqwandb/3cv0zo1t-wandb-metadata.json
+2024-05-25 17:27:30,022 DEBUG   SenderThread:364928 [sender.py:send():379] send: telemetry
+2024-05-25 17:27:30,578 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_created():271] file/dir created: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/output.log
+2024-05-25 17:27:30,578 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_created():271] file/dir created: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/requirements.txt
+2024-05-25 17:27:32,579 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_modified():288] file/dir modified: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/output.log
+2024-05-25 17:27:33,025 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: status_report
+2024-05-25 17:27:33,703 DEBUG   SenderThread:364928 [sender.py:send():379] send: telemetry
+2024-05-25 17:27:33,703 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: partial_history
+2024-05-25 17:27:34,580 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_modified():288] file/dir modified: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/output.log
+2024-05-25 17:27:36,581 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_modified():288] file/dir modified: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/output.log
+2024-05-25 17:27:38,582 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_modified():288] file/dir modified: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/output.log
+2024-05-25 17:27:38,951 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: status_report
+2024-05-25 17:27:43,952 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: status_report
+2024-05-25 17:27:48,953 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: status_report
+2024-05-25 17:27:53,955 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: status_report
+2024-05-25 17:27:58,960 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: status_report
+2024-05-25 17:27:59,590 INFO    Thread-17 :364928 [dir_watcher.py:_on_file_modified():288] file/dir modified: /home/minjae/Documents/Minjae/Research/minjae-rl/wandb/run-20240525_172727-2d7cd68b-0321-4e48-a565-697be20e8e9d/files/config.yaml
+2024-05-25 17:28:04,079 DEBUG   HandlerThread:364928 [handler.py:handle_request():146] handle_request: status_report

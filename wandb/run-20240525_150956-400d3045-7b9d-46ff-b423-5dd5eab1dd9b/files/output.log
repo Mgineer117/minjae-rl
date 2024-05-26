@@ -1,0 +1,279 @@
+[36mSaving config:
+{
+    "action_dim":	"3",
+    "actor_hidden_dims":	[
+        256,
+        256
+    ],
+    "agent_type":	"Hopper",
+    "algo_name":	"trpo",
+    "critic_lr":	0.0001,
+    "data_num":	1000000,
+    "device":	"cpu",
+    "env_type":	"Gym",
+    "episode_len":	1000,
+    "episode_num":	2,
+    "epoch":	2000,
+    "eval_episodes":	3,
+    "grad_norm":	true,
+    "group":	"Gym-Hopper-seed-0",
+    "hidden_dims":	[
+        256,
+        256
+    ],
+    "import_policy":	false,
+    "logdir":	"log/trpo-2366-seed0/Gym-Hopper-seed-0",
+    "max_action":	"1.0",
+    "name":	"trpo-2366-seed0",
+    "obs_shape":	[
+        11
+    ],
+    "pklfile":	null,
+    "project":	"data-collect",
+    "rendering":	false,
+    "seed":	0,
+    "step_per_epoch":	10,
+    "task":	"Gym-Hopper",
+    "task_name":	null,
+    "task_num":	3,
+    "verbose":	true
+}
+Epoch:   0%|                                                                                                                | 0/2000 [00:00<?, ?it/s]
+
+
+
+
+
+
+
+
+
+  gym.logger.warn(
+Epoch:   0%|                                                                                                     | 1/2000 [00:24<13:36:59, 24.52s/it]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Epoch:   1%|▉                                                                                                   | 19/2000 [07:12<12:26:43, 22.62s/it]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Traceback (most recent call last):
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data/trpo_collect.py", line 149, in <module>
+    train()
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/collect_data/trpo_collect.py", line 145, in train
+    policy_trainer.online_train(args.seed)
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/../minjae-rl/rlkit/policy_trainer/mf_policy_trainer.py", line 137, in online_train
+    batch, sample_time = self.sampler.collect_samples(self.policy, seed)
+  File "/home/minjae/Documents/Minjae/Research/minjae-rl/../minjae-rl/rlkit/buffer/sampler.py", line 269, in collect_samples
+    p.join()
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/multiprocessing/process.py", line 149, in join
+    res = self._popen.wait(timeout)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/multiprocessing/popen_fork.py", line 43, in wait
+    return self.poll(os.WNOHANG if timeout == 0.0 else 0)
+  File "/home/minjae/miniconda3/envs/rl/lib/python3.10/multiprocessing/popen_fork.py", line 27, in poll
+    pid, sts = os.waitpid(self.pid, flag)
+KeyboardInterrupt

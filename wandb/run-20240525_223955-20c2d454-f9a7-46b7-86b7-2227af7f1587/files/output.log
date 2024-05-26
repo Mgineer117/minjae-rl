@@ -1,0 +1,216 @@
+[36mSaving config:
+{
+    "action_dim":	"3",
+    "actor_hidden_dims":	[
+        256,
+        256
+    ],
+    "agent_type":	"Hopper",
+    "algo_name":	"trpo",
+    "critic_lr":	0.001,
+    "data_num":	1000000,
+    "device":	"cpu",
+    "env_type":	"Gym",
+    "episode_len":	1000,
+    "episode_num":	2,
+    "epoch":	2000,
+    "eval_episodes":	3,
+    "grad_norm":	false,
+    "group":	"Gym-Hopper-seed-0",
+    "hidden_dims":	[
+        256,
+        256
+    ],
+    "import_policy":	false,
+    "logdir":	"log/trpo-2f1d-seed0/Gym-Hopper-seed-0",
+    "max_action":	"1.0",
+    "name":	"trpo-2f1d-seed0",
+    "num_cores":	null,
+    "obs_shape":	[
+        11
+    ],
+    "project":	"data-collect",
+    "rendering":	false,
+    "seed":	0,
+    "step_per_epoch":	10,
+    "task":	"Gym-Hopper",
+    "task_name":	null,
+    "task_num":	1,
+    "verbose":	true
+}
+Epoch:   0%|                                                                                                            | 0/2000 [00:00<?, ?it/s]
+
+
+
+
+
+
+
+
+
+  gym.logger.warn(
+Epoch:   0%|                                                                                                 | 1/2000 [00:31<17:26:51, 31.42s/it]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

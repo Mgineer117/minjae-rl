@@ -14,6 +14,8 @@ today = date.today()
 
 def cost_fn(s, a, ns):
     cost = 0.0
+    if np.abs(ns[0]) > 0.3:
+        cost += 1.0
     return cost
 
 def calculate_workers_and_rounds(environments, episodes_per_env, num_cores):
@@ -55,6 +57,7 @@ class OnlineSampler:
         episode_num: int,
         training_envs: list,
         running_state = None,
+        num_cores: int = None,
         data_num: int = None,
         device: str = "cpu"
     ) -> None:
@@ -69,30 +72,33 @@ class OnlineSampler:
         self.device = torch.device(device)
 
         # Preprocess for multiprocessing to avoid CPU overscription and deadlock
-        self.num_cores = multiprocessing.cpu_count() #torch.get_num_threads()
+        self.num_cores = num_cores if num_cores is not None else multiprocessing.cpu_count() #torch.get_num_threads()
         num_workers_per_round, num_env_per_round, episodes_per_worker, rounds = calculate_workers_and_rounds(self.training_envs, self.episode_num, self.num_cores)
         
         self.num_workers_per_round = num_workers_per_round
         self.num_env_per_round = num_env_per_round
+        self.total_num_worker = sum(self.num_workers_per_round)
         self.episodes_per_worker = episodes_per_worker
         self.thread_batch_size = self.episodes_per_worker * self.episode_len
         self.rounds = rounds
 
         print('Sampling Parameters:')
         print('--------------------')
-        print(f'Core usage for this run           : {self.num_workers_per_round[0]}/{self.num_cores}')
+        print(f'Core usage for this run           : {self.num_workers_per_round[0]}/{self.num_cores} | {multiprocessing.cpu_count()}')
         print(f'Number of Environments each Round : {self.num_env_per_round}')
+        print(f'Total number of Worker            : {self.total_num_worker}')
         print(f'Episodes per Worker               : {self.episodes_per_worker}')
         torch.set_num_threads(1) # enforce one task for each worker to avoide CPU overscription.
 
         if self.data_num is not None:
             # to create an enough batch..
-            self.data_buffer = self.get_reset_data(self.data_num+self.episode_len)
+            self.data_buffer = self.get_reset_data(2*self.data_num)
             self.buffer_last_idx = 0
 
     def save_buffer(self):
         for k in self.data_buffer:
             self.data_buffer[k] = self.data_buffer[k][:self.data_num]
+        print('data saved!!')
         print('mean reward: ',np.mean(self.data_buffer['rewards']))
         print('mean cost: ',np.mean(self.data_buffer['costs']))
         hfile = h5py.File('data.h5py', 'w')
@@ -125,7 +131,6 @@ class OnlineSampler:
         # estimate the batch size to hava a large batch
         batch_size = thread_batch_size + episode_len
         data = self.get_reset_data(batch_size=batch_size)
-
         current_step = 0
         while current_step < thread_batch_size:
             # var initialization
@@ -221,17 +226,9 @@ class OnlineSampler:
             successes=data['successes'].astype(np.float32),
         )
 
-        if self.data_num is not None:
-            for k in memory:
-                self.data_buffer[k][self.buffer_last_idx:self.buffer_last_idx+current_step, :] = memory[k] 
-            self.buffer_last_idx += current_step
-            if self.buffer_last_idx >= self.data_num:
-                self.save_buffer()
-                self.data_num = None
-
         for k in memory:
             memory[k] = memory[k][:thread_batch_size]
-                                
+
         if queue is not None:
             queue.put([pid, memory])
         else:
@@ -258,32 +255,43 @@ class OnlineSampler:
         for round_number in range(self.rounds):
             #print(f"Starting round {round_number + 1}/{self.rounds}")
             processes = []
-            
             #print(f'indices: {env_idx}<->{env_idx+self.num_env_per_round[round_number]}')
             envs = self.training_envs[env_idx:env_idx+self.num_env_per_round[round_number]]
             for env in envs:
                 workers_for_env = self.num_workers_per_round[round_number] // len(envs)
                 for _ in range(workers_for_env):
-                    worker_args = (worker_idx, queue, env, policy, self.thread_batch_size, 
-                               self.episode_len, deterministic, env_idx, seed)
-                    p = multiprocessing.Process(target=self.collect_trajectory, args=worker_args)
-                    processes.append(p)
-                    p.start()
+                    if worker_idx == self.total_num_worker - 1:
+                        '''Main thread process'''
+                        memory = self.collect_trajectory(worker_idx, None, env, policy, self.thread_batch_size,
+                                                         self.episode_len, deterministic, env_idx, seed)
+                    else:
+                        '''Sub-thread process'''
+                        worker_args = (worker_idx, queue, env, policy, self.thread_batch_size, 
+                                self.episode_len, deterministic, env_idx, seed)
+                        p = multiprocessing.Process(target=self.collect_trajectory, args=worker_args)
+                        processes.append(p)
+                        p.start()
                     worker_idx += 1
                 env_idx += 1
-            
             for p in processes:
                 p.join()
-            
-        worker_memories = [None] * worker_idx
-        for _ in range(worker_idx): 
+
+        worker_memories = [None] * (worker_idx - 1)
+        for _ in range(worker_idx - 1): 
             pid, worker_memory = queue.get()
             worker_memories[pid] = worker_memory
-        
-        memory = worker_memories[0]
-        for worker_memory in worker_memories[1:]:
+        for worker_memory in worker_memories:
             for k in memory:
                 memory[k] = np.concatenate((memory[k], worker_memory[k]), axis=0)
+
+        if self.data_num is not None:
+            memory_size = memory['observations'].shape[0]
+            for k in memory:
+                self.data_buffer[k][self.buffer_last_idx:self.buffer_last_idx+memory_size, :] = memory[k] 
+            self.buffer_last_idx += memory_size
+            if self.buffer_last_idx >= self.data_num:
+                self.save_buffer()
+                self.data_num = None
 
         policy = self.to_device(policy, self.device)
         t_end = time.time()
