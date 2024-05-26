@@ -1,4 +1,0 @@
-name: rlkit
-channels:
-  - defaults
-prefix: /home/minjae/miniconda3/envs/rlkit
