@@ -39,7 +39,7 @@ def get_args():
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--critic-lr", type=float, default=3e-3)
-    parser.add_argument('--epoch', type=int, default=2000)
+    parser.add_argument('--epoch', type=int, default=3000)
     parser.add_argument("--step-per-epoch", type=int, default=50)
     parser.add_argument('--episode_len', type=int, default=500)
     parser.add_argument('--episode_num', type=int, default=2)
