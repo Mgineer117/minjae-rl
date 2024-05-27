@@ -98,17 +98,15 @@ def train(args=get_args()):
         unbounded=True,
         conditioned_sigma=True,
         max_mu=args.max_action,
-        sigma_min=-5.0,
+        sigma_min=-2.0,
         sigma_max=2.0
     )
 
     actor = ActorProb(actor_backbone,
                         dist_net=dist,
                         device=args.device)   
-    #actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
 
     critic = Critic(critic_backbone, device = args.device)
-    #critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
     
     optimizer = torch.optim.Adam([
                         {'params': actor.parameters(), 'lr': args.actor_lr},
@@ -117,7 +115,6 @@ def train(args=get_args()):
     
     policy = PPOPolicy(
         actor=actor,
-        #actor_old=actor_old,
         critic=critic,
         optimizer=optimizer,
         K_epochs=args.K_epochs,

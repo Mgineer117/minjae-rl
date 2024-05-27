@@ -41,7 +41,7 @@ def get_args():
     parser.add_argument('--num-cores', type=int, default=None)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
-    parser.add_argument("--critic-lr", type=float, default=1e-3)
+    parser.add_argument("--critic-lr", type=float, default=3e-3)
     parser.add_argument('--epoch', type=int, default=1000)
     parser.add_argument("--step-per-epoch", type=int, default=50)
     parser.add_argument('--episode_len', type=int, default=1000)
@@ -95,7 +95,7 @@ def train(args=get_args()):
         unbounded=False,
         conditioned_sigma=True,
         max_mu=args.max_action,
-        sigma_min=-5.0,
+        sigma_min=-2.0,
         sigma_max=2.0
     )
 
