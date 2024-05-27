@@ -22,7 +22,7 @@ from rlkit.policy import TRPOPolicy
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", type=str, default="data-collect")
+    parser.add_argument("--project", type=str, default="purpose")
     parser.add_argument("--name", type=str, default=None)
     parser.add_argument('--task', type=str, default=None) # None, naming began using environmental parameters
     parser.add_argument("--algo-name", type=str, default="trpo")
