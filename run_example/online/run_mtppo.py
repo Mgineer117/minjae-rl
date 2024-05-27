@@ -106,7 +106,7 @@ def train(args=get_args()):
             unbounded=False,
             conditioned_sigma=True,
             max_mu=args.max_action,
-            sigma_min=-2.0,
+            sigma_min=-3.0,
             sigma_max=2.0
         )
 

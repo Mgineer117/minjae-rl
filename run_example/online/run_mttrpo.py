@@ -105,7 +105,9 @@ def train(args=get_args()):
             output_dim=args.action_dim,
             unbounded=False,
             conditioned_sigma=True,
-            max_mu=args.max_action
+            max_mu=args.max_action,
+            sigma_min=-3.0,
+            sigma_max=2.0
         )
 
         actor = ActorProb(actor_backbone,
