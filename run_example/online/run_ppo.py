@@ -44,11 +44,11 @@ def get_args():
     parser.add_argument("--K-epochs", type=int, default=5)
     parser.add_argument("--eps-clip", type=float, default=0.2)
     parser.add_argument("--actor-lr", type=float, default=1e-4)
-    parser.add_argument("--critic-lr", type=float, default=1e-3)
+    parser.add_argument("--critic-lr", type=float, default=3e-3)
     parser.add_argument('--epoch', type=int, default=2000)
-    parser.add_argument("--step-per-epoch", type=int, default=1)
+    parser.add_argument("--step-per-epoch", type=int, default=10)
     parser.add_argument('--episode_len', type=int, default=1000)
-    parser.add_argument('--episode_num', type=int, default=4)
+    parser.add_argument('--episode_num', type=int, default=1)
     parser.add_argument("--eval_episodes", type=int, default=3)
     parser.add_argument("--rendering", type=bool, default=True)
     parser.add_argument("--import-policy", type=bool, default=False)
@@ -96,23 +96,25 @@ def train(args=get_args()):
             unbounded=False,
             conditioned_sigma=True,
             max_mu=args.max_action,
-            sigma_min=-2.0,
+            sigma_min=-3.0,
             sigma_max=2.0
         )
 
         actor = ActorProb(actor_backbone,
                           dist_net=dist,
                           device=args.device)   
-        actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
                 
         critic = Critic(critic_backbone, device = args.device)
-        critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
+
+        optimizer = torch.optim.Adam([
+                        {'params': actor.parameters(), 'lr': args.actor_lr},
+                        {'params': critic.parameters(), 'lr': args.critic_lr}
+                    ])
         
         policy = PPOPolicy(
             actor=actor,
-            actor_optim=actor_optim,
             critic=critic,
-            critic_optim=critic_optim,
+            optimizer=optimizer,
             K_epochs=args.K_epochs,
             eps_clip=args.eps_clip,
             device=args.device

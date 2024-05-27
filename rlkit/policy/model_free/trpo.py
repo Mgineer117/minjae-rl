@@ -8,14 +8,14 @@ import time
 from typing import Dict, Union, Tuple
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
-from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to
+from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to, normal_log_density
 
 def conjugate_gradients(Avp, b, nsteps, device, residual_tol=1e-10):
     x = torch.zeros(b.size()).to(device)
     r = b.clone()
     p = b.clone()
     rdotr = torch.dot(r, r)
-    for i in range(nsteps):
+    for _ in range(nsteps):
         _Avp = Avp(p)
         alpha = rdotr / torch.dot(p, _Avp)
         x += alpha * p
@@ -28,23 +28,21 @@ def conjugate_gradients(Avp, b, nsteps, device, residual_tol=1e-10):
             break
     return x
 
-def line_search(model, f, x, fullstep, expected_improve_full, max_backtracks=15, accept_ratio=0.1):
-        fval = f(True).item()
-        
-        for stepfrac in [.5**x for x in range(max_backtracks)]:
-            x_new = x + stepfrac * fullstep
-            set_flat_params_to(model, x_new)
-            fval_new = f(True).item()
+def line_search(model, f, x, fullstep, expected_improve_full, max_backtracks=10, accept_ratio=0.1):
+    fval = f(True).item()
 
-            actual_improve = fval - fval_new
+    for stepfrac in [.5**x for x in range(max_backtracks)]:
+        x_new = x + stepfrac * fullstep
+        set_flat_params_to(model, x_new)
+        fval_new = f(True).item()
+        actual_improve = fval - fval_new
+        expected_improve = expected_improve_full * stepfrac
+        ratio = actual_improve / expected_improve
 
-            expected_improve = expected_improve_full * stepfrac
+        if ratio > accept_ratio:
+            return True, x_new
+    return False, x
 
-            ratio = actual_improve / expected_improve
-
-            if actual_improve > 0 and ratio > accept_ratio:
-                return True, x_new
-        return False, x
 
 class TRPOPolicy(BasePolicy):
     def __init__(
@@ -56,9 +54,9 @@ class TRPOPolicy(BasePolicy):
             encoder_optim: torch.optim.Optimizer = None,
             tau: float = 0.95,
             gamma: float  = 0.99,
-            max_kl: float = 1e-3,
+            max_kl: float = 1e-2,
             damping: float = 1e-2,
-            l2_reg: float = 1e-4,
+            l2_reg: float = 1e-6,
             grad_norm: bool = False,
             device = None
             ):
@@ -104,7 +102,7 @@ class TRPOPolicy(BasePolicy):
         else:
             action = dist.rsample()
         logprob = dist.log_prob(action)
-        return action, logprob[0]
+        return action, logprob
 
     def select_action(
         self,
@@ -174,10 +172,10 @@ class TRPOPolicy(BasePolicy):
         obss = torch.from_numpy(batch['observations']).to(self.device)
         actions = torch.from_numpy(batch['actions']).to(self.device)
         next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
-        rewards = torch.from_numpy(batch['rewards']).to(self.device)
-        masks = torch.from_numpy(batch['masks']).to(self.device)
-        env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
-        successes = torch.from_numpy(batch['successes']).to(self.device)
+        rewards = torch.squeeze(torch.from_numpy(batch['rewards'])).to(self.device)
+        masks = torch.squeeze(torch.from_numpy(batch['masks'])).to(self.device)
+        env_idxs = torch.squeeze(torch.from_numpy(batch['env_idxs'])).to(self.device)
+        successes = torch.squeeze(torch.from_numpy(batch['successes'])).to(self.device)
 
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
         _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
@@ -187,33 +185,28 @@ class TRPOPolicy(BasePolicy):
 
         """get advantage estimation from the trajectories"""
         advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
+        advantages = torch.squeeze(advantages)
 
         """update critic"""
-        def closure():
-            self.critic_optim.zero_grad()
-            r_pred = self.critic(embedded_obss)
-            v_loss = self.loss_fn(r_pred, returns)
-            for param in self.critic.parameters():
-                v_loss += param.pow(2).sum() * self._l2_reg
-            v_loss.backward()
-            return v_loss
-        
-        self.critic_optim.step(closure)
-
-        with torch.no_grad():
-            r_pred = self.critic(embedded_obss)
+        r_pred = self.critic(embedded_obss)
 
         v_loss = self.loss_fn(r_pred, returns)
+
+        self.critic_optim.zero_grad()
+        v_loss.backward()
+        self.critic_optim.step()
 
         """update policy"""
         with torch.no_grad():
             dist = self.actor(embedded_obss)
-            fixed_log_probs = dist.log_prob(actions)
+            #fixed_log_probs = dist.log_prob(actions)
+            fixed_log_probs = normal_log_density(actions, dist.mode(), dist.logstd(), dist.std())
 
         def get_loss(volatile=False):
             with torch.set_grad_enabled(not volatile):
                 dist = self.actor(embedded_obss)
-                log_probs = dist.log_prob(actions)
+                #log_probs = dist.log_prob(actions)
+                log_probs = normal_log_density(actions, dist.mode(), dist.logstd(), dist.std())
                 action_loss = -advantages * torch.exp(log_probs - fixed_log_probs)
                 return action_loss.mean()
             
@@ -240,7 +233,6 @@ class TRPOPolicy(BasePolicy):
             loss_grad = loss_grad/torch.norm(loss_grad)
         stepdir = conjugate_gradients(Fvp, -loss_grad, 10, device=self.device)
 
-
         shs = 0.5 * (stepdir.dot(Fvp(stepdir)))
         lm = math.sqrt(self._max_kl / shs)
         fullstep = stepdir * lm
@@ -254,7 +246,8 @@ class TRPOPolicy(BasePolicy):
             'loss/critic_loss': v_loss.item(),
             'loss/actor_loss': loss.item(),
             'train/stochastic_reward': rewards.mean().item(),
-            'train/success': successes.mean().item()
+            'train/success': successes.mean().item(),
+            'train/line_search': int(ln_sch_success)
         }
         
         return result 

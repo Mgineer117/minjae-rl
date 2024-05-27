@@ -111,7 +111,7 @@ def train(args=get_args()):
                           device=args.device)   
                 
         critic = Critic(critic_backbone, device = args.device)
-        critic_optim = torch.optim.LBFGS(critic.parameters(), lr=args.critic_lr, max_iter=20)
+        critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
 
         running_state = ZFilter(args.obs_shape, clip=5)
 

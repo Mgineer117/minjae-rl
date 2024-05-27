@@ -22,7 +22,7 @@ from rlkit.policy import TRPOPolicy
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", type=str, default="purpose")
+    parser.add_argument("--project", type=str, default="data-collect")
     parser.add_argument("--name", type=str, default=None)
     parser.add_argument('--task', type=str, default=None) # None, naming began using environmental parameters
     parser.add_argument("--algo-name", type=str, default="trpo")
@@ -31,19 +31,20 @@ def get_args():
 
     parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
     parser.add_argument('--agent-type', type=str, default='MT1') # MT1, ML45, Hopper, Ant
-    parser.add_argument('--task-name', type=str, default='pick-place') # None for Gym and MetaGym except ML1 or MT1 'pick-place'
-    parser.add_argument('--task-num', type=int, default=3) # 10, 45, 50
+    parser.add_argument('--task-name', type=str, default='lever-pull') # None for Gym and MetaGym except ML1 or MT1 'pick-place'
+    parser.add_argument('--task-num', type=int, default=1) # 10, 45, 50
 
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
     parser.add_argument('--num-cores', type=int, default=None)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
-    parser.add_argument("--critic-lr", type=float, default=1e-3)
+    parser.add_argument("--critic-lr", type=float, default=3e-3)
     parser.add_argument('--epoch', type=int, default=2000)
-    parser.add_argument("--step-per-epoch", type=int, default=50)
-    parser.add_argument('--episode_len', type=int, default=500)
+    parser.add_argument("--step-per-epoch", type=int, default=10)
+    parser.add_argument('--episode_len', type=int, default=1000)
     parser.add_argument('--episode_num', type=int, default=2)
     parser.add_argument("--eval_episodes", type=int, default=3)
+    parser.add_argument("--grad-norm", type=bool, default=False)
     parser.add_argument("--rendering", type=bool, default=False)
     parser.add_argument("--import-policy", type=bool, default=False)
     parser.add_argument("--verbose", type=bool, default=True)
@@ -90,7 +91,7 @@ def train(args=get_args()):
             unbounded=False,
             conditioned_sigma=True,
             max_mu=args.max_action,
-            sigma_min=-2.0,
+            sigma_min=-3.0,
             sigma_max=2.0
         )
 
@@ -99,12 +100,13 @@ def train(args=get_args()):
                           device=args.device)   
                 
         critic = Critic(critic_backbone, device = args.device)
-        critic_optim = torch.optim.LBFGS(critic.parameters(), lr=args.critic_lr, max_iter=10)
+        critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
         
         policy = TRPOPolicy(
             actor=actor,
             critic=critic,
             critic_optim=critic_optim,
+            grad_norm=args.grad_norm,
             device=args.device
         )
 

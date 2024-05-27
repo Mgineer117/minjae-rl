@@ -37,7 +37,7 @@ def get_args():
     parser.add_argument('--task-num', type=int, default=None) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
-    parser.add_argument("--embed-type", type=str, default='purpose') # onehot or purpose
+    parser.add_argument("--embed-type", type=str, default='onehot') # onehot or purpose
     parser.add_argument("--embed-dim", type=int, default=5) # one-hot or purpose
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
     parser.add_argument('--num-cores', type=int, default=None)
@@ -113,11 +113,14 @@ def train(args=get_args()):
         actor = ActorProb(actor_backbone,
                           dist_net=dist,
                           device=args.device)   
-        actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
                 
         critic = Critic(critic_backbone, device=args.device)
-        critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
-        
+
+        optimizer = torch.optim.AdamW([
+                        {'params': actor.parameters(), 'lr': args.actor_lr},
+                        {'params': critic.parameters(), 'lr': args.critic_lr}
+                    ])
+
         # Define sampler (online) or buffer (offline)
         running_state = ZFilter(args.obs_shape, clip=5)
 
@@ -135,9 +138,8 @@ def train(args=get_args()):
         # define combinatory policy
         policy = PPOPolicy(
             actor=actor,
-            actor_optim=actor_optim,
             critic=critic,
-            critic_optim=critic_optim,
+            optimizer=optimizer,
             encoder=encoder,
             encoder_optim=encoder_optim,
             K_epochs=args.K_epochs,

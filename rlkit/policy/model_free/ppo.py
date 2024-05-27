@@ -5,19 +5,22 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 import math
 import time
+from copy import deepcopy
 
 from typing import Dict, Union, Tuple
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
-from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to
+from rlkit.utils.utils  import estimate_advantages
 
 class PPOPolicy(BasePolicy):
     def __init__(
             self, 
             actor: nn.Module, 
-            actor_optim: torch.optim.Optimizer,
+            #actor_optim: torch.optim.Optimizer,
+            #actor_old: nn.Module, 
             critic: nn.Module,  
-            critic_optim: torch.optim.Optimizer,
+            optimizer: torch.optim.Optimizer,
+            #critic_optim: torch.optim.Optimizer,
             encoder: BaseEncoder = None,
             encoder_optim: torch.optim.Optimizer = None,
             tau: float = 0.95,
@@ -30,9 +33,9 @@ class PPOPolicy(BasePolicy):
         super().__init__()
 
         self.actor = actor
-        self.actor_optim = actor_optim
         self.critic = critic
-        self.critic_optim = critic_optim
+        self.optimizer = optimizer
+        
         if encoder is not None:
             self.encoder = encoder
         else:
@@ -69,7 +72,7 @@ class PPOPolicy(BasePolicy):
         else:
             action = dist.rsample()
         logprob = dist.log_prob(action)
-        return action, logprob[0]
+        return action, logprob
 
     def select_action(
         self,
@@ -141,63 +144,44 @@ class PPOPolicy(BasePolicy):
         next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
         rewards = torch.from_numpy(batch['rewards']).to(self.device)
         masks = torch.from_numpy(batch['masks']).to(self.device)
-        logprobs = torch.from_numpy(batch['logprobs']).to(self.device)
         env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
+        logprobs = torch.from_numpy(batch['logprobs']).to(self.device)
         successes = torch.from_numpy(batch['successes']).to(self.device)
         
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
+        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+
+        with torch.no_grad():
+            values = self.critic(embedded_obss)
+        
+        """get advantage estimation from the trajectories"""
+        advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
+        advantages = torch.squeeze(advantages)
 
         '''Update the parameters'''
-        for _ in range(self._K_epochs):
-            _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
-            embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
-
-            r_pred = self.critic(embedded_obss)
-
-            """get advantage estimation from the trajectories"""
-            advantages, returns = estimate_advantages(rewards, masks, r_pred.detach(), self._gamma, self._tau, self.device)
-
-            '''get policy outpu'''
-            dist = self.actor(embedded_obss.detach())
+        for _ in range(self._K_epochs):    
+            '''get policy output'''
+            dist = self.actor(embedded_obss)
             new_logprobs = dist.log_prob(actions)
             dist_entropy = dist.entropy()
             
-            '''
-            if self.encoder_optim is not None:
-                encoder_loss = -torch.mean(r_pred)
+            '''get value loss'''
+            r_pred = self.critic(embedded_obss)
 
-                self.encoder_optim.zero_grad()
-                encoder_loss.backward(retain_graph=True)            
-                self.encoder_optim.step()
-
-            v_loss = self.loss_fn(r_pred, returns)
-            
-            #self.critic_optim.zero_grad()
-            v_loss.backward()
-            self.critic_optim.step()
-            '''
-            v_loss = self.loss_fn(r_pred, returns)
-
-            if self.encoder_optim is not None:
-                self.critic_optim.zero_grad(); self.encoder_optim.zero_grad()
-                v_loss.backward()
-                self.critic_optim.step(); self.encoder_optim.step()
-            else:
-                self.critic_optim.zero_grad()
-                v_loss.backward()
-                self.critic_optim.step()
-
-            ratios = torch.exp(new_logprobs - logprobs.detach())
+            '''get policy loss'''
+            ratios = torch.exp(new_logprobs - logprobs)
 
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1-self._eps_clip, 1+self._eps_clip) * advantages
 
-            loss = torch.mean(-torch.min(surr1, surr2) + 0.5 * v_loss.detach() - 0.01 * dist_entropy)
+            v_loss = self.loss_fn(r_pred, returns)
 
-            self.actor_optim.zero_grad()
+            loss = torch.mean(-torch.min(surr1, surr2) + 0.5 * v_loss - 0.01 * dist_entropy)
+
+            '''Update agents'''
+            self.optimizer.zero_grad()
             loss.backward()
-            self.actor_optim.step()
-
+            self.optimizer.step()
 
         result = {
             'loss/critic_loss': v_loss.item(),

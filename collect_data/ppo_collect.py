@@ -37,21 +37,21 @@ def get_args():
     parser.add_argument('--task-num', type=int, default=1) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
-    parser.add_argument('--seed', default=0, type=list)
+    parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--num-cores', type=int, default=None)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--K-epochs", type=int, default=5)
     parser.add_argument("--eps-clip", type=float, default=0.2)
     parser.add_argument("--actor-lr", type=float, default=1e-4)
-    parser.add_argument("--critic-lr", type=float, default=1e-3)
-    parser.add_argument('--epoch', type=int, default=100)
+    parser.add_argument("--critic-lr", type=float, default=3e-3)
+    parser.add_argument('--epoch', type=int, default=1000)
     parser.add_argument("--step-per-epoch", type=int, default=10)
     parser.add_argument('--episode_len', type=int, default=1000)
     parser.add_argument('--episode_num', type=int, default=4)
-    parser.add_argument("--eval_episodes", type=int, default=3)
-    parser.add_argument("--rendering", type=bool, default=True)
-    parser.add_argument("--data_num", type=int, default=1_000_000)
+    parser.add_argument("--eval_episodes", type=int, default=2)
+    parser.add_argument("--rendering", type=bool, default=False)
+    parser.add_argument("--data_num", type=int, default=10_000)
     parser.add_argument("--import-policy", type=bool, default=False)
     parser.add_argument("--verbose", type=bool, default=True)
 
@@ -82,38 +82,44 @@ def train(args=get_args()):
         episode_len=args.episode_len,
         episode_num=args.episode_num,
         training_envs=training_envs,
-        running_state=running_state,
+        #running_state=running_state,
         data_num=args.data_num,
         num_cores=args.num_cores,
         device=args.device,
     )
 
     actor_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh,)
+    #actor_old_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh,)
     critic_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=args.hidden_dims, activation=torch.nn.Tanh,)
     
     dist = DiagGaussian(
         latent_dim=getattr(actor_backbone, "output_dim"),
         output_dim=args.action_dim,
-        unbounded=False,
+        unbounded=True,
         conditioned_sigma=True,
         max_mu=args.max_action,
-        sigma_min=-2.0,
+        sigma_min=-5.0,
         sigma_max=2.0
     )
 
     actor = ActorProb(actor_backbone,
                         dist_net=dist,
                         device=args.device)   
-    actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
-            
+    #actor_optim = torch.optim.Adam(actor.parameters(), lr=args.actor_lr)
+
     critic = Critic(critic_backbone, device = args.device)
-    critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
+    #critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
+    
+    optimizer = torch.optim.Adam([
+                        {'params': actor.parameters(), 'lr': args.actor_lr},
+                        {'params': critic.parameters(), 'lr': args.critic_lr}
+                    ])
     
     policy = PPOPolicy(
         actor=actor,
-        actor_optim=actor_optim,
+        #actor_old=actor_old,
         critic=critic,
-        critic_optim=critic_optim,
+        optimizer=optimizer,
         K_epochs=args.K_epochs,
         eps_clip=args.eps_clip,
         device=args.device

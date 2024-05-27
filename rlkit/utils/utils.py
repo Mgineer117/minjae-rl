@@ -1,5 +1,6 @@
 import random
 import os
+import math
 import torch
 import numpy as np
 
@@ -94,3 +95,8 @@ def estimate_constraint_value(costs, masks, gamma, device):
     constraint_value = constraint_value/traj_num
     constraint_value = constraint_value.to(device)
     return constraint_value[0]
+
+def normal_log_density(x, mean, log_std, std):
+    var = std.pow(2)
+    log_density = -(x - mean).pow(2) / (2 * var) - 0.5 * math.log(2 * math.pi) - log_std
+    return log_density.sum(1, keepdim=True)

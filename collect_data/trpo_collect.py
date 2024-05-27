@@ -32,7 +32,7 @@ def get_args():
 
     '''OpenAI Gym parameters'''
     parser.add_argument('--env-type', type=str, default='Gym') # Gym or MetaGym
-    parser.add_argument('--agent-type', type=str, default='InvertedPendulum') # MT1, ML45, Hopper, Ant
+    parser.add_argument('--agent-type', type=str, default='Hopper') # MT1, ML45, Hopper, Ant
     parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
     parser.add_argument('--task-num', type=int, default=1) # 10, 45, 50
 
@@ -42,11 +42,11 @@ def get_args():
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--critic-lr", type=float, default=1e-3)
-    parser.add_argument('--epoch', type=int, default=2000)
-    parser.add_argument("--step-per-epoch", type=int, default=10)
+    parser.add_argument('--epoch', type=int, default=1000)
+    parser.add_argument("--step-per-epoch", type=int, default=50)
     parser.add_argument('--episode_len', type=int, default=1000)
     parser.add_argument('--episode_num', type=int, default=2)
-    parser.add_argument("--eval_episodes", type=int, default=3)
+    parser.add_argument("--eval_episodes", type=int, default=2)
     parser.add_argument("--grad-norm", type=bool, default=False)
     parser.add_argument("--rendering", type=bool, default=False)
     parser.add_argument("--data_num", type=int, default=1_000_000)
@@ -80,7 +80,7 @@ def train(args=get_args()):
         episode_len=args.episode_len,
         episode_num=args.episode_num,
         training_envs=training_envs,
-        running_state=running_state,
+        #running_state=running_state,
         data_num=args.data_num,
         num_cores=args.num_cores,
         device=args.device,
@@ -104,7 +104,8 @@ def train(args=get_args()):
                         device=args.device)   
             
     critic = Critic(critic_backbone, device = args.device)
-    critic_optim = torch.optim.LBFGS(critic.parameters(), lr=args.critic_lr, max_iter=20)
+    #critic_optim = torch.optim.LBFGS(critic.parameters(), lr=args.critic_lr, max_iter=20)
+    critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
     
     policy = TRPOPolicy(
         actor=actor,

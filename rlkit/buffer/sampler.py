@@ -127,12 +127,18 @@ class OnlineSampler:
         return data
 
     def collect_trajectory(self, pid, queue, env, policy, thread_batch_size, episode_len,
-                           deterministic=False, env_idx=0, seed=0):
+                           episode_num, deterministic=False, env_idx=0, seed=0):
         # estimate the batch size to hava a large batch
         batch_size = thread_batch_size + episode_len
         data = self.get_reset_data(batch_size=batch_size)
         current_step = 0
+        ep_num = 0
         while current_step < thread_batch_size:
+            # break criteria
+            if ep_num >= episode_num:
+                #pass
+                break
+            
             # var initialization
             _returns = 0
             t = 0 
@@ -183,8 +189,6 @@ class OnlineSampler:
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
                     _, ns, _, e_ns = policy.encode_obs(mdp, env_idx=env_idx, reset=False)
-
-                s = ns; e_s = e_ns
                 
                 # saving the data
                 data['observations'][current_step+t, :] = s
@@ -198,12 +202,14 @@ class OnlineSampler:
                 data['logprobs'][current_step+t, :] = logprob
                 data['env_idxs'][current_step+t, :] = env_idx    
                 data['successes'][current_step+t, :] = success
-            
+
+                s = ns; e_s = e_ns
                 _returns += rew
                 t += 1
     
                 if done:        
                     # clear log
+                    ep_num += 1
                     current_step += t
                     _returns = 0
                     try:
@@ -211,7 +217,6 @@ class OnlineSampler:
                     except:
                         s = env.reset(seed=seed)
                     break
-        
         memory = dict(
             observations=data['observations'].astype(np.float32),
             actions=data['actions'].astype(np.float32),
@@ -221,13 +226,18 @@ class OnlineSampler:
             terminals=data['terminals'].astype(np.int32),
             timeouts=data['timeouts'].astype(np.int32),
             masks=data['masks'].astype(np.int32),
+            #dones=data['dones'].astype(np.int32),
             logprobs=data['logprobs'].astype(np.float32),
             env_idxs=data['env_idxs'].astype(np.int32),
             successes=data['successes'].astype(np.float32),
+            #avg_ep_return=np.sum(data['rewards'])/len(np.where(data['dones']==1)[0])
         )
-
-        for k in memory:
-            memory[k] = memory[k][:thread_batch_size]
+        if current_step < thread_batch_size:
+            for k in memory:
+                memory[k] = memory[k][:current_step]
+        else:
+            for k in memory:
+                memory[k] = memory[k][:thread_batch_size]
 
         if queue is not None:
             queue.put([pid, memory])
@@ -263,11 +273,11 @@ class OnlineSampler:
                     if worker_idx == self.total_num_worker - 1:
                         '''Main thread process'''
                         memory = self.collect_trajectory(worker_idx, None, env, policy, self.thread_batch_size,
-                                                         self.episode_len, deterministic, env_idx, seed)
+                                                         self.episode_len, self.episode_num, deterministic, env_idx, seed)
                     else:
                         '''Sub-thread process'''
                         worker_args = (worker_idx, queue, env, policy, self.thread_batch_size, 
-                                self.episode_len, deterministic, env_idx, seed)
+                                self.episode_len, self.episode_num, deterministic, env_idx, seed)
                         p = multiprocessing.Process(target=self.collect_trajectory, args=worker_args)
                         processes.append(p)
                         p.start()
@@ -283,7 +293,6 @@ class OnlineSampler:
         for worker_memory in worker_memories:
             for k in memory:
                 memory[k] = np.concatenate((memory[k], worker_memory[k]), axis=0)
-
         if self.data_num is not None:
             memory_size = memory['observations'].shape[0]
             for k in memory:

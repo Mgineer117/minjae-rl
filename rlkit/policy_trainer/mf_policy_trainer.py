@@ -134,7 +134,6 @@ class MFPolicyTrainer:
             self.current_epoch = e
             self.policy.train()
             for it in trange(self._step_per_epoch, desc=f"Training", leave=False):
-                #print(self.sampler.running_state.rs.mean, self.sampler.running_state.rs.std)
                 batch, sample_time = self.sampler.collect_samples(self.policy, seed)
                 loss = self.policy.learn(batch); loss['sample_time'] = sample_time
                 self.logger.store(**loss)
