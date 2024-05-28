@@ -76,7 +76,7 @@ def estimate_advantages(rewards, masks, values, gamma, tau, device):
     advantages, returns = advantages.to(device), returns.to(device)
     return advantages, returns
 
-def estimate_constraint_value(costs, masks, gamma, device):
+def estimate_episodic_value(costs, masks, gamma, device):
     costs, masks = costs.to(torch.device('cpu')), masks.to(torch.device('cpu'))
     tensor_type = type(costs)
     constraint_value = torch.tensor(0)

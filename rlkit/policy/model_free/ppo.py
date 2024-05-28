@@ -10,7 +10,7 @@ from copy import deepcopy
 from typing import Dict, Union, Tuple
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
-from rlkit.utils.utils  import estimate_advantages
+from rlkit.utils.utils  import estimate_advantages, estimate_episodic_value
 
 class PPOPolicy(BasePolicy):
     def __init__(
@@ -156,6 +156,7 @@ class PPOPolicy(BasePolicy):
         
         """get advantage estimation from the trajectories"""
         advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
+        episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
         advantages = torch.squeeze(advantages)
 
         '''Update the parameters'''
@@ -186,7 +187,7 @@ class PPOPolicy(BasePolicy):
         result = {
             'loss/critic_loss': v_loss.item(),
             'loss/actor_loss': loss.item(),
-            'train/stochastic_reward': rewards.mean().item(),
+            'train/stochastic_reward': episodic_reward.item(),
             'train/success': successes.mean().item()
         }
         

@@ -59,6 +59,7 @@ class OnlineSampler:
         running_state = None,
         num_cores: int = None,
         data_num: int = None,
+        cost_fn = cost_fn,
         device: str = "cpu"
     ) -> None:
         self.obs_dim = obs_shape[0]
@@ -68,6 +69,7 @@ class OnlineSampler:
         self.training_envs = training_envs
         self.running_state = running_state
         self.data_num = data_num
+        self.cost_fn = cost_fn
 
         self.device = torch.device(device)
 
@@ -177,7 +179,7 @@ class OnlineSampler:
                     success = infos['success']
                 except:
                     success = 0.0 
-                cost = cost_fn(s, a, ns)
+                cost = self.cost_fn(s, a, ns)
                 done = trunc or term
                 mask = 0 if done else 1
                 

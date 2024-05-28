@@ -17,6 +17,12 @@ from rlkit.utils.wandb_logger import WandbLogger
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
 
+def cost_fn(s, a, ns):
+    cost = 0.0
+    if np.abs(ns[0]) > 0.3:
+        cost += 1.0
+    return cost
+
 # model-free policy trainer
 class MFPolicyTrainer:
     def __init__(
@@ -145,11 +151,14 @@ class MFPolicyTrainer:
             # evaluate current policy
             eval_info = self._evaluate(seed)
             ep_reward_mean, ep_reward_std = np.mean(eval_info["eval/episode_reward"]), np.std(eval_info["eval/episode_reward"])
+            ep_cost_mean, ep_cost_std = np.mean(eval_info["eval/episode_cost"]), np.std(eval_info["eval/episode_cost"])
             ep_success_rate_mean, ep_success_rate_std = np.mean(eval_info["eval/episode_success_rate"]), np.std(eval_info["eval/episode_success_rate"])
             ep_length_mean, ep_length_std = np.mean(eval_info["eval/episode_length"]), np.std(eval_info["eval/episode_length"])
 
             eval_data = {"eval/episode_reward": ep_reward_mean,
                          "eval/episode_reward_std": ep_reward_std,
+                         "eval/episode_cost": ep_cost_mean,
+                         "eval/episode_cost_std": ep_cost_std,
                          "eval/ep_success_mean": ep_success_rate_mean,
                          "eval/ep_success_std": ep_success_rate_std,
                          "eval/episode_length": ep_length_mean,
@@ -202,7 +211,7 @@ class MFPolicyTrainer:
 
         eval_ep_info_buffer = []
         num_episodes = 0
-        episode_reward, episode_length, episode_success = 0, 0, 0
+        episode_reward, episode_cost, episode_length, episode_success = 0, 0, 0, 0
 
         while num_episodes < self._eval_episodes:
             with torch.no_grad():
@@ -213,6 +222,7 @@ class MFPolicyTrainer:
             except:
                 ns, rew, term, infos = self.eval_env.step(a.flatten())
                 done = term
+            cost = cost_fn(s, a, ns)
             try:
                 success = infos['success']
             except:
@@ -225,6 +235,7 @@ class MFPolicyTrainer:
                     self.recorded_frames.append(self.eval_env.render())
             
             episode_reward += rew
+            episode_cost += cost
             episode_success += success
             episode_length += 1
             
@@ -240,10 +251,10 @@ class MFPolicyTrainer:
 
             if done:
                 eval_ep_info_buffer.append(
-                    {"episode_reward": episode_reward, "episode_length": episode_length, "episode_success_rate":episode_success/episode_length}
+                    {"episode_reward": episode_reward, "episode_cost": episode_cost, "episode_length": episode_length, "episode_success_rate":episode_success/episode_length}
                 )
                 num_episodes +=1
-                episode_reward, episode_length = 0, 0
+                episode_reward, episode_cost, episode_length = 0, 0, 0
                 try:
                     s, _ = self.eval_env.reset(seed=seed)
                 except:
@@ -254,6 +265,7 @@ class MFPolicyTrainer:
                 self.save_rendering(self.logger.checkpoint_dir)
         return {
             "eval/episode_reward": [ep_info["episode_reward"] for ep_info in eval_ep_info_buffer],
+            "eval/episode_cost": [ep_info["episode_cost"] for ep_info in eval_ep_info_buffer],
             "eval/episode_length": [ep_info["episode_length"] for ep_info in eval_ep_info_buffer],
             "eval/episode_success_rate": [ep_info["episode_success_rate"] for ep_info in eval_ep_info_buffer],
         }

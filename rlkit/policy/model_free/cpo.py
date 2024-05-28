@@ -8,7 +8,7 @@ import time
 from typing import Dict, Union, Tuple
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
-from rlkit.utils.utils  import estimate_advantages, estimate_constraint_value, get_flat_params_from, set_flat_params_to
+from rlkit.utils.utils  import estimate_advantages, estimate_episodic_value, get_flat_params_from, set_flat_params_to, normal_log_density
 
 def conjugate_gradients(Avp, b, nsteps, device, residual_tol=1e-10):
     x = torch.zeros(b.size()).to(device)
@@ -47,8 +47,9 @@ class CPOPolicy(BasePolicy):
     def __init__(
             self, 
             actor: nn.Module, 
-            critic: nn.Module,  
-            critic_optim: torch.optim.Optimizer,
+            r_critic: nn.Module,  
+            c_critic: nn.Module,  
+            critic_optimizer: torch.optim.Optimizer,
             encoder: BaseEncoder = None,
             encoder_optim: torch.optim.Optimizer = None,
             tau: float = 0.95,
@@ -63,8 +64,10 @@ class CPOPolicy(BasePolicy):
         super().__init__()
 
         self.actor = actor
-        self.critic = critic
-        self.critic_optim = critic_optim
+        self.r_critic = r_critic
+        self.c_critic = c_critic
+        self.critic_optimizer = critic_optimizer
+
         if encoder is not None:
             self.encoder = encoder
         else:
@@ -86,11 +89,13 @@ class CPOPolicy(BasePolicy):
     
     def train(self) -> None:
         self.actor.train()
-        self.critic.train()
+        self.r_critic.train()
+        self.c_critic.train()
 
     def eval(self) -> None:
         self.actor.eval()
-        self.critic.eval()
+        self.r_critic.eval()
+        self.c_critic.eval()
 
     def actforward(
         self,
@@ -103,7 +108,7 @@ class CPOPolicy(BasePolicy):
         else:
             action = dist.rsample()
         logprob = dist.log_prob(action)
-        return action, logprob[0]
+        return action, logprob
 
     def select_action(
         self,
@@ -183,49 +188,49 @@ class CPOPolicy(BasePolicy):
         _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
 
         with torch.no_grad():
-            values = self.critic(embedded_obss)
+            reward_values = self.r_critic(embedded_obss)
+            cost_values = self.c_critic(embedded_obss)
 
         """get advantage estimation from the trajectories"""
-        advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
-        cost_advantages, cost_returns = estimate_advantages(costs, masks, values, self._gamma, self._tau, self.device)
-        constraint_value = estimate_constraint_value(costs, masks, self._gamma, self.device)
-
+        reward_advantages, reward_returns = estimate_advantages(rewards, masks, reward_values, self._gamma, self._tau, self.device)
+        cost_advantages, cost_returns = estimate_advantages(costs, masks, cost_values, self._gamma, self._tau, self.device)
+        episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
+        episodic_cost = estimate_episodic_value(costs, masks, 1.0, self.device)
+        # Match the dimension
+        #reward_advantages = torch.squeeze(reward_advantages)
+        #cost_advantages = torch.squeeze(cost_advantages)
 
         """update critic"""
-        def closure():
-            self.critic_optim.zero_grad()
-            r_pred = self.critic(embedded_obss)
-            v_loss = self.loss_fn(r_pred, returns)
-            for param in self.critic.parameters():
-                v_loss += param.pow(2).sum() * self._l2_reg
-            v_loss.backward()
-            return v_loss
-        
-        self.critic_optim.step(closure)
+        r_pred = self.r_critic(embedded_obss)
+        c_pred = self.c_critic(embedded_obss)
+        r_v_loss = self.loss_fn(r_pred, reward_returns)
+        c_v_loss = self.loss_fn(c_pred, cost_returns)
 
-        with torch.no_grad():
-            r_pred = self.critic(embedded_obss)
-
-        v_loss = self.loss_fn(r_pred, returns)
+        self.critic_optimizer.zero_grad()
+        r_v_loss.backward(); c_v_loss.backward()
+        self.critic_optimizer.step()
 
         """update policy"""
         with torch.no_grad():
             dist = self.actor(embedded_obss)
-            fixed_log_probs = dist.log_prob(actions)
+            #fixed_log_probs = dist.log_prob(actions)
+            fixed_log_probs = normal_log_density(actions, dist.mode(), dist.logstd(), dist.std())
 
         def get_loss(volatile=False):
             with torch.set_grad_enabled(not volatile):
                 dist = self.actor(embedded_obss)
-                log_probs = dist.log_prob(actions)
-                action_loss = -advantages * torch.exp(log_probs - fixed_log_probs)
+                #log_probs = dist.log_prob(actions)
+                log_probs = normal_log_density(actions, dist.mode(), dist.logstd(), dist.std())
+                action_loss = -reward_advantages * torch.exp(log_probs - fixed_log_probs)
                 return action_loss.mean()
         
         def get_cost_loss(volatile=False):
             with torch.set_grad_enabled(not volatile):
                 dist = self.actor(embedded_obss)
-                log_probs = dist.log_prob(actions)
-                cost_loss = cost_advantages * torch.exp(log_probs - fixed_log_probs)
-                return cost_loss.mean() 
+                #log_probs = dist.log_prob(actions)
+                log_probs = normal_log_density(actions, dist.mode(), dist.logstd(), dist.std())
+                action_loss = cost_advantages * torch.exp(log_probs - fixed_log_probs)
+                return action_loss.mean() 
             
         """directly compute Hessian*vector from KL"""
         def Fvp_direct(v):
@@ -254,14 +259,14 @@ class CPOPolicy(BasePolicy):
         Fvp = Fvp_direct
         
         '''reward grad'''
-        loss = get_loss()
-        grads = torch.autograd.grad(loss, self.actor.parameters())
-        loss_grad = torch.cat([grad.view(-1) for grad in grads]).detach()
+        reward_loss = get_loss()
+        reward_grads = torch.autograd.grad(reward_loss, self.actor.parameters())
+        reward_loss_grad = torch.cat([grad.view(-1) for grad in reward_grads]).detach()
         if self.grad_norm:
-            loss_grad = loss_grad/torch.norm(loss_grad)
-        stepdir = conjugate_gradients(Fvp, -loss_grad, 10, device=self.device)
+            reward_loss_grad = reward_loss_grad/torch.norm(reward_loss_grad)
+        reward_stepdir = conjugate_gradients(Fvp, -reward_loss_grad, 10, device=self.device)
         if self.grad_norm:
-            stepdir = stepdir/torch.norm(stepdir)
+            reward_stepdir = reward_stepdir/torch.norm(reward_stepdir)
 
         '''cost grad'''
         cost_loss = get_cost_loss()
@@ -274,14 +279,13 @@ class CPOPolicy(BasePolicy):
             cost_stepdir = cost_stepdir/torch.norm(cost_stepdir)
 
         '''Define q, r, s'''
-        p = -cost_loss_grad.dot(stepdir) #a^T.H^-1.g
-        q = -loss_grad.dot(stepdir) #g^T.H^-1.g
-        r = loss_grad.dot(cost_stepdir) #g^T.H^-1.a
+        p = -cost_loss_grad.dot(reward_stepdir) #a^T.H^-1.g
+        q = -reward_loss_grad.dot(reward_stepdir) #g^T.H^-1.g
+        r = reward_loss_grad.dot(cost_stepdir) #g^T.H^-1.a
         s = -cost_loss_grad.dot(cost_stepdir) #a^T.H^-1.a 
 
-
-        d_k = torch.as_tensor(self._d_k, dtype=constraint_value.dtype, device=self.device)
-        cc = constraint_value - d_k # c would be positive for most part of the training
+        d_k = torch.as_tensor(self._d_k, dtype=episodic_cost.dtype, device=self.device)
+        cc = episodic_cost - d_k # c would be positive for most part of the training
         lamda = 2*self._max_kl
 
         #find optimal lambda_a and lambda_b
@@ -313,23 +317,34 @@ class CPOPolicy(BasePolicy):
         """ find optimal step direction """
         # check for feasibility
         if ((cc**2)/s - self._max_kl) > 0 and cc>0:
-            print('INFEASIBLE !!!!')
             opt_stepdir = torch.sqrt(2*self._max_kl/s)*Fvp(cost_stepdir)
         else: 
-            opt_stepdir = (stepdir - opt_nu*cost_stepdir)/opt_lambda
+            opt_stepdir = (reward_stepdir - opt_nu*cost_stepdir)/(opt_lambda + 1e-7)
         
-        # perform line search
+        # perform with line search
         prev_params = get_flat_params_from(self.actor)
         fullstep = opt_stepdir
-        expected_improve = -loss_grad.dot(fullstep)
+        expected_improve = -reward_loss_grad.dot(fullstep)
         ln_sch_success, new_params = line_search(self.actor, get_loss, prev_params, fullstep, expected_improve)
         set_flat_params_to(self.actor, new_params)
+        
+        '''
+        # perform w/o line search
+        prev_params = get_flat_params_from(self.actor)
+        new_params = prev_params + opt_stepdir
+        set_flat_params_to(self.actor, new_params)
+        ln_sch_success = 1
+        '''
 
         result = {
-            'loss/critic_loss': v_loss.item(),
-            'loss/actor_loss': loss.item(),
-            'train/stochastic_reward': rewards.mean().item(),
-            'train/success': successes.mean().item()
+            'loss/value_loss': r_v_loss.item(),
+            'loss/cost_loss': c_v_loss.item(),
+            'loss/actor_reward_loss': reward_loss.item(),
+            'loss/actor_cost_loss': cost_loss.item(),
+            'train/stochastic_reward': episodic_reward.item(),
+            'train/stochastic_cost': episodic_cost.item(),
+            'train/success': successes.mean().item(),
+            'train/line_search': int(ln_sch_success)
         }
         
         return result 

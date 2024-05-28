@@ -8,7 +8,7 @@ import time
 from typing import Dict, Union, Tuple
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
-from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to, normal_log_density
+from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to, normal_log_density, estimate_episodic_value
 
 def conjugate_gradients(Avp, b, nsteps, device, residual_tol=1e-10):
     x = torch.zeros(b.size()).to(device)
@@ -172,10 +172,10 @@ class TRPOPolicy(BasePolicy):
         obss = torch.from_numpy(batch['observations']).to(self.device)
         actions = torch.from_numpy(batch['actions']).to(self.device)
         next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
-        rewards = torch.squeeze(torch.from_numpy(batch['rewards'])).to(self.device)
-        masks = torch.squeeze(torch.from_numpy(batch['masks'])).to(self.device)
-        env_idxs = torch.squeeze(torch.from_numpy(batch['env_idxs'])).to(self.device)
-        successes = torch.squeeze(torch.from_numpy(batch['successes'])).to(self.device)
+        rewards = torch.from_numpy(batch['rewards']).to(self.device)
+        masks = torch.from_numpy(batch['masks']).to(self.device)
+        env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
+        successes = torch.from_numpy(batch['successes']).to(self.device)
 
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
         _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
@@ -185,11 +185,10 @@ class TRPOPolicy(BasePolicy):
 
         """get advantage estimation from the trajectories"""
         advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
-        advantages = torch.squeeze(advantages)
+        episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
 
         """update critic"""
         r_pred = self.critic(embedded_obss)
-
         v_loss = self.loss_fn(r_pred, returns)
 
         self.critic_optim.zero_grad()
@@ -245,7 +244,7 @@ class TRPOPolicy(BasePolicy):
         result = {
             'loss/critic_loss': v_loss.item(),
             'loss/actor_loss': loss.item(),
-            'train/stochastic_reward': rewards.mean().item(),
+            'train/stochastic_reward': episodic_reward.item(),
             'train/success': successes.mean().item(),
             'train/line_search': int(ln_sch_success)
         }
