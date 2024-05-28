@@ -341,8 +341,8 @@ class CPOPolicy(BasePolicy):
             'loss/cost_loss': c_v_loss.item(),
             'loss/actor_reward_loss': reward_loss.item(),
             'loss/actor_cost_loss': cost_loss.item(),
-            'train/stochastic_reward': episodic_reward.item(),
-            'train/stochastic_cost': episodic_cost.item(),
+            'train/episodic_reward': episodic_reward.item(),
+            'train/episodic_cost': episodic_cost.item(),
             'train/success': successes.mean().item(),
             'train/line_search': int(ln_sch_success)
         }

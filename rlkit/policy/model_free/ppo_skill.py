@@ -5,24 +5,22 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 import math
 import time
-from copy import deepcopy
 
 from typing import Dict, Union, Tuple
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
-from rlkit.utils.utils  import estimate_advantages, estimate_episodic_value
+from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to, estimate_episodic_value
 
-class PPOPolicy(BasePolicy):
+class PPOSkillPolicy(BasePolicy):
     def __init__(
             self, 
             actor: nn.Module, 
-            #actor_optim: torch.optim.Optimizer,
-            #actor_old: nn.Module, 
+            blind_actor: nn.Module, 
             critic: nn.Module,  
-            optimizer: torch.optim.Optimizer,
-            #critic_optim: torch.optim.Optimizer,
-            encoder: BaseEncoder = None,
-            encoder_optim: torch.optim.Optimizer = None,
+            encoder: BaseEncoder,
+            main_optimizer: torch.optim.Optimizer,
+            supp_optimizer: torch.optim.Optimizer,
+            masking_indices = None,
             tau: float = 0.95,
             gamma: float = 0.99,
             K_epochs: int = 3,
@@ -33,14 +31,12 @@ class PPOPolicy(BasePolicy):
         super().__init__()
 
         self.actor = actor
+        self.blind_actor = blind_actor
         self.critic = critic
-        self.optimizer = optimizer
-        
-        if encoder is not None:
-            self.encoder = encoder
-        else:
-            self.encoder = BaseEncoder(device=device)
-        self.encoder_optim = encoder_optim
+        self.encoder = encoder
+        self.main_optimizer = main_optimizer
+        self.supp_optimizer = supp_optimizer
+        self.masking_indices = masking_indices
 
         self.loss_fn = torch.nn.MSELoss()
 
@@ -56,10 +52,14 @@ class PPOPolicy(BasePolicy):
     def train(self) -> None:
         self.actor.train()
         self.critic.train()
+        self.blind_actor.train()
+        self.encoder.train()
 
     def eval(self) -> None:
         self.actor.eval()
         self.critic.eval()
+        self.blind_actor.eval()
+        self.encoder.eval()
 
     def actforward(
         self,
@@ -81,6 +81,28 @@ class PPOPolicy(BasePolicy):
     ) -> np.ndarray:
         with torch.no_grad():
             action, logprob = self.actforward(obs, deterministic)
+        return action.cpu().numpy(), logprob.cpu().numpy()
+    
+    def blind_actforward(
+        self,
+        obs: torch.Tensor,
+        deterministic: bool = False,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        dist = self.blind_actor(obs)
+        if deterministic:
+            action = dist.mode()
+        else:
+            action = dist.rsample()
+        logprob = dist.log_prob(action)
+        return action, logprob
+
+    def blind_select_action(
+        self,
+        obs: np.ndarray,
+        deterministic: bool = False
+    ) -> np.ndarray:
+        with torch.no_grad():
+            action, logprob = self.blind_actforward(obs, deterministic)
         return action.cpu().numpy(), logprob.cpu().numpy()
     
     def encode_obs(self, mdp_tuple, env_idx = None, reset=True):
@@ -126,43 +148,44 @@ class PPOPolicy(BasePolicy):
                 mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
                 embedding = self.encoder(mdp, do_pad=True)
                 embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
+                masekd_embedding = torch.concatenate((embedding[:-1], self.mask_obs(obs, self.masking_indices, dim=-1)), axis=-1)
                 embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
-                return obs, next_obs, embedded_obs, embedded_next_obs
+                return obs, next_obs, embedded_obs, embedded_next_obs, masekd_embedding
             else:
                 mdp = torch.concatenate((obs, actions, next_obs, rewards), axis=-1)
                 mdp = mdp[None, None, :]
                 embedding = self.encoder(mdp, do_reset=reset)
                 embedded_next_obs = torch.concatenate((embedding, next_obs), axis=-1)
                 embedded_obs = embedded_next_obs
-                return obs, next_obs, embedded_obs, embedded_next_obs
+                return obs, next_obs, embedded_obs, embedded_next_obs, embedding
         else:
             NotImplementedError
     
-    def learn(self, batch):
+    def policy_learn(self, batch):
         obss = torch.from_numpy(batch['observations']).to(self.device)
         actions = torch.from_numpy(batch['actions']).to(self.device)
         next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
         rewards = torch.from_numpy(batch['rewards']).to(self.device)
         masks = torch.from_numpy(batch['masks']).to(self.device)
-        env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
         logprobs = torch.from_numpy(batch['logprobs']).to(self.device)
+        env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
         successes = torch.from_numpy(batch['successes']).to(self.device)
         
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
-        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
 
         with torch.no_grad():
+            _, _, embedded_obss, _, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
             values = self.critic(embedded_obss)
-        
+
         """get advantage estimation from the trajectories"""
         advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
         episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
         advantages = torch.squeeze(advantages)
 
         '''Update the parameters'''
-        for _ in range(self._K_epochs):    
+        for _ in range(self._K_epochs):
             with torch.no_grad():
-                _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+                _, _, embedded_obss, _, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
             embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
 
             '''get policy output'''
@@ -175,17 +198,16 @@ class PPOPolicy(BasePolicy):
             v_loss = self.loss_fn(r_pred, returns)
 
             '''get policy loss'''
-            ratios = torch.exp(new_logprobs - logprobs)
+            ratios = torch.exp(new_logprobs - logprobs.detach())
 
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1-self._eps_clip, 1+self._eps_clip) * advantages
 
             loss = torch.mean(-torch.min(surr1, surr2) + 0.5 * v_loss - 0.01 * dist_entropy)
 
-            '''Update agents'''
-            self.optimizer.zero_grad()
+            self.main_optimizer.zero_grad()
             loss.backward()
-            self.optimizer.step()
+            self.main_optimizer.step()
 
         result = {
             'loss/critic_loss': v_loss.item(),
@@ -195,3 +217,67 @@ class PPOPolicy(BasePolicy):
         }
         
         return result 
+    
+    def blind_policy_learn(self, batch):
+        obss = torch.from_numpy(batch['observations']).to(self.device)
+        actions = torch.from_numpy(batch['actions']).to(self.device)
+        next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
+        rewards = torch.from_numpy(batch['rewards']).to(self.device)
+        masks = torch.from_numpy(batch['masks']).to(self.device)
+        logprobs = torch.from_numpy(batch['logprobs']).to(self.device)
+        env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
+        successes = torch.from_numpy(batch['successes']).to(self.device)
+        
+        mdp_tuple = (obss, actions, next_obss, rewards, masks)
+
+        with torch.no_grad():
+            _, _, embedded_obss, _, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+            values = self.critic(embedded_obss)
+
+        """get advantage estimation from the trajectories"""
+        advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
+        episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
+        advantages = torch.squeeze(advantages)
+
+        '''Update the parameters'''
+        for _ in range(self._K_epochs):
+            _, _, embedded_obss, _, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+            embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
+
+            '''get policy output'''
+            dist = self.actor(embedded_obss)
+            new_logprobs = dist.log_prob(actions)
+            dist_entropy = dist.entropy()
+            
+            '''get value loss'''
+            r_pred = self.critic(embedded_obss)
+            v_loss = self.loss_fn(r_pred, returns)
+
+            '''get policy loss'''
+            ratios = torch.exp(new_logprobs - logprobs.detach())
+
+            surr1 = ratios * advantages
+            surr2 = torch.clamp(ratios, 1-self._eps_clip, 1+self._eps_clip) * advantages
+
+            loss = torch.mean(-torch.min(surr1, surr2) + 0.5 * v_loss - 0.01 * dist_entropy)
+
+            '''Update agents'''
+            self.supp_optimizer.zero_grad()
+            loss.backward()
+            self.supp_optimizer.step()
+
+        result = {
+            'loss/blind_actor_loss': loss.item(),
+            'train/blind_episodic_reward': episodic_reward.item(),
+            'train/blind_success': successes.mean().item()
+        }
+        
+        return result 
+
+
+    def mask_obs(self, obs: torch.Tensor, ind: list, dim: int) -> torch.Tensor:
+        obs = obs.cpu().numpy()
+        obs = np.delete(obs, ind, axis=dim)
+        obs = torch.from_numpy(obs).to(self.device)
+
+        return obs

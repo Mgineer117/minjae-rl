@@ -244,7 +244,7 @@ class TRPOPolicy(BasePolicy):
         result = {
             'loss/critic_loss': v_loss.item(),
             'loss/actor_loss': loss.item(),
-            'train/stochastic_reward': episodic_reward.item(),
+            'train/episodic_reward': episodic_reward.item(),
             'train/success': successes.mean().item(),
             'train/line_search': int(ln_sch_success)
         }

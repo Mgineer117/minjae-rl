@@ -15,10 +15,10 @@ from rlkit.modules import ActorProb, Critic, DistCritic, PhiNetwork, DiagGaussia
 from rlkit.utils.load_dataset import qlearning_dataset
 from rlkit.utils.load_env import load_env
 from rlkit.utils.zfilter import ZFilter
-from rlkit.buffer import OnlineSampler
+from rlkit.buffer import OnlineSkillSampler
 from rlkit.utils.wandb_logger import WandbLogger
-from rlkit.policy_trainer import MFPolicyTrainer
-from rlkit.policy import PPOPolicy
+from rlkit.policy_trainer import MFSkillPolicyTrainer
+from rlkit.policy import PPOSkillPolicy
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -37,10 +37,9 @@ def get_args():
     parser.add_argument('--task-num', type=int, default=None) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
-    parser.add_argument("--embed-type", type=str, default='purpose') # onehot or purpose
-    parser.add_argument("--embed-dim", type=int, default=5) # one-hot or purpose
+    parser.add_argument("--embed-type", type=str, default='skill') # onehot or purpose or skill
+    parser.add_argument("--embed-dim", type=int, default=4) # one-hot or purpose
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
-    parser.add_argument('--num-cores', type=int, default=None)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--K-epochs", type=int, default=5)
@@ -83,7 +82,7 @@ def train(args=get_args()):
                 device = args.device
             )
             encoder_optim = None
-        elif args.embed_type == 'purpose':
+        elif args.embed_type == 'skill':
             rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
             encoder = RecurrentEncoder(
                 input_size=rnn_size, 
@@ -91,13 +90,21 @@ def train(args=get_args()):
                 output_size=args.embed_dim,
                 device = args.device
             )
-            encoder_optim = torch.optim.Adam(encoder.parameters(), lr=args.critic_lr)
+            masking_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                           22, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
+            '''
+            0   1  2  3 4  5  6  7  8  9  10 11 12 13 14 15 16 17
+            18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35
+            36 37 38
+            '''
+            added_masking_indices = [x + args.embed_dim for x in masking_indices]
         else:
             print('...No task embedding is applied')
             encoder_optim = None
             args.embed_dim = 0
 
         actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh)
+        blind_actor_backbone = MLP(input_dim=args.embed_dim + 11, hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh)
         critic_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), hidden_dims=args.hidden_dims, activation=torch.nn.Tanh,)
         
         dist = DiagGaussian(
@@ -106,42 +113,53 @@ def train(args=get_args()):
             unbounded=False,
             conditioned_sigma=True,
             max_mu=args.max_action,
-            sigma_min=-3.0,
+            sigma_min=-2.0,
             sigma_max=2.0
         )
 
         actor = ActorProb(actor_backbone,
                           dist_net=dist,
                           device=args.device)   
+
+        blind_actor = ActorProb(blind_actor_backbone,
+                          dist_net=dist,
+                          device=args.device)   
                 
         critic = Critic(critic_backbone, device=args.device)
 
-        optimizer = torch.optim.AdamW([
+        main_optimizer = torch.optim.AdamW([
                         {'params': actor.parameters(), 'lr': args.actor_lr},
                         {'params': critic.parameters(), 'lr': args.critic_lr}
                     ])
-
+        
+        supp_optimizer = torch.optim.AdamW([
+                        {'params': blind_actor.parameters(), 'lr': args.actor_lr},
+                        {'params': encoder.parameters(), 'lr': args.critic_lr}
+                    ])
+        
         # Define sampler (online) or buffer (offline)
         running_state = ZFilter(args.obs_shape, clip=5)
 
-        sampler = OnlineSampler(
+        sampler = OnlineSkillSampler(
             obs_shape=args.obs_shape,
             action_dim=args.action_dim,
             episode_len=args.episode_len,
             episode_num=args.episode_num,
             training_envs=training_envs,
             running_state=running_state,
-            num_cores=args.num_cores,
+            masking_indices=added_masking_indices,
             device=args.device,
         )
         
         # define combinatory policy
-        policy = PPOPolicy(
+        policy = PPOSkillPolicy(
             actor=actor,
+            blind_actor=blind_actor,
             critic=critic,
-            optimizer=optimizer,
             encoder=encoder,
-            encoder_optim=encoder_optim,
+            main_optimizer=main_optimizer,
+            supp_optimizer=supp_optimizer,
+            masking_indices=masking_indices,
             K_epochs=args.K_epochs,
             eps_clip=args.eps_clip,
             device=args.device
@@ -159,7 +177,7 @@ def train(args=get_args()):
         logger.save_config(default_cfg, verbose=args.verbose)
 
         # create policy trainer
-        policy_trainer = MFPolicyTrainer(
+        policy_trainer = MFSkillPolicyTrainer(
             policy=policy,
             eval_env=testing_envs,
             eval_env_idx=eval_env_idx,
