@@ -31,12 +31,13 @@ def get_args():
     parser.add_argument("--algo-name", type=str, default="mtppo")
     parser.add_argument("--group", type=str, default=None)
     parser.add_argument("--logdir", type=str, default="log")
+    parser.add_argument("--gpu-idx", type=int, default=3)
 
     '''OpenAI Gym parameters'''
     parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
     parser.add_argument('--agent-type', type=str, default='MT10') # MT1, ML45, Hopper, Ant
     parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
-    parser.add_argument('--task-num', type=int, default=None) # 10, 45, 50
+    parser.add_argument('--task-num', type=int, default=None) # 2, 3, 4 for MT1 and ML1
 
     '''Algorithmic and sampling parameters'''
     parser.add_argument("--embed-type", type=str, default='purpose') # onehot or purpose
@@ -62,7 +63,7 @@ def get_args():
 
 def train(args=get_args()):
     unique_id = str(uuid.uuid4())[:4]
-    args.device = select_device()
+    args.device = select_device(args.gpu_idx)
     
     for seed in args.seeds:
         # seed
@@ -93,6 +94,7 @@ def train(args=get_args()):
                 input_size=rnn_size, 
                 hidden_size=rnn_size, 
                 output_size=args.embed_dim,
+                output_activation=torch.nn.Tanh(),
                 device = args.device
             )
             encoder_optim = torch.optim.Adam(encoder.parameters(), lr=args.critic_lr)
