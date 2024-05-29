@@ -54,13 +54,14 @@ def get_args():
     parser.add_argument("--eval_episodes", type=int, default=3)
     parser.add_argument("--rendering", type=bool, default=True)
     parser.add_argument("--import-policy", type=bool, default=False)
+    parser.add_argument("--gpu-idx", type=int, default=0)
     parser.add_argument("--verbose", type=bool, default=True)
 
     return parser.parse_args()
 
 def train(args=get_args()):
     unique_id = str(uuid.uuid4())[:4]
-    args.device = select_device()
+    args.device = select_device(args.gpu_idx)
     
     for seed in args.seeds:
         # seed

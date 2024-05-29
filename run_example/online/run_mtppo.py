@@ -31,7 +31,6 @@ def get_args():
     parser.add_argument("--algo-name", type=str, default="mtppo")
     parser.add_argument("--group", type=str, default=None)
     parser.add_argument("--logdir", type=str, default="log")
-    parser.add_argument("--gpu-idx", type=int, default=3)
 
     '''OpenAI Gym parameters'''
     parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
@@ -57,6 +56,7 @@ def get_args():
     parser.add_argument("--eval_episodes", type=int, default=3)
     parser.add_argument("--rendering", type=bool, default=True)
     parser.add_argument("--import-policy", type=bool, default=False)
+    parser.add_argument("--gpu-idx", type=int, default=0)
     parser.add_argument("--verbose", type=bool, default=True)
 
     return parser.parse_args()
