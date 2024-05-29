@@ -164,8 +164,8 @@ class OnlineSkillSampler:
             # policy.encode should output s, ns, encoded_s, and encodded_ns
             with torch.no_grad():
                 s, _, e_s, _, _ = policy.encode_obs(mdp, env_idx=env_idx, reset=True)
-            
             e_s = self.mask_obs(e_s)
+            
             # begin the episodic loop
             while t < episode_len:
                 # sample action
@@ -193,7 +193,6 @@ class OnlineSkillSampler:
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
                     _, ns, _, e_ns, _ = policy.encode_obs(mdp, env_idx=env_idx)
-                e_ns = self.mask_obs(e_ns)
                 
                 # saving the data
                 data['observations'][current_step+t, :] = s
@@ -208,6 +207,7 @@ class OnlineSkillSampler:
                 data['env_idxs'][current_step+t, :] = env_idx    
                 data['successes'][current_step+t, :] = success
 
+                e_ns = self.mask_obs(e_ns)
                 s = ns; e_s = e_ns
                 _returns += rew
                 t += 1
