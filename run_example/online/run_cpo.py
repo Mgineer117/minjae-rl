@@ -14,6 +14,7 @@ from rlkit.nets import MLP, RNNModel, RecurrentEncoder
 from rlkit.modules import ActorProb, Critic, DistCritic, PhiNetwork, DiagGaussian
 from rlkit.utils.load_dataset import qlearning_dataset
 from rlkit.utils.load_env import load_env
+from rlkit.utils.load_cost_fn import load_cost_fn
 from rlkit.utils.zfilter import ZFilter
 from rlkit.buffer import OnlineSampler
 from rlkit.utils.wandb_logger import WandbLogger
@@ -38,10 +39,10 @@ def get_args():
     parser.add_argument('--num-cores', type=int, default=None)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
-    parser.add_argument("--cost_limit", type=float, default=50.0)
+    parser.add_argument("--cost_limit", type=float, default=30.0)
     parser.add_argument("--critic-lr", type=float, default=3e-4)
     parser.add_argument('--epoch', type=int, default=3000)
-    parser.add_argument("--step-per-epoch", type=int, default=10)
+    parser.add_argument("--step-per-epoch", type=int, default=50)
     parser.add_argument('--episode_len', type=int, default=1000)
     parser.add_argument('--episode_num', type=int, default=1)
     parser.add_argument("--eval_episodes", type=int, default=5)
@@ -63,6 +64,7 @@ def train(args=get_args()):
         # create env and dataset
         args.task = '-'.join((args.env_type, args.agent_type))
         training_envs, testing_envs, eval_env_idx = load_env(args.task, args.task_name, args.task_num)
+        cost_fn = load_cost_fn(args.task)
 
         # create policy model
         '''state dimension input manipulation for Ss only'''
@@ -78,6 +80,7 @@ def train(args=get_args()):
             episode_len= args.episode_len,
             episode_num= args.episode_num,
             training_envs=training_envs,
+            cost_fn=cost_fn,
             running_state=running_state,
             num_cores=args.num_cores,
             device=args.device,
@@ -136,6 +139,7 @@ def train(args=get_args()):
             eval_env=testing_envs,
             eval_env_idx=eval_env_idx,
             sampler=sampler,
+            cost_fn=cost_fn,
             logger=logger,
             epoch=args.epoch,
             step_per_epoch=args.step_per_epoch,

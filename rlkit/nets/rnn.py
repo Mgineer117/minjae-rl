@@ -124,49 +124,51 @@ class RecurrentEncoder(nn.Module):
 
         # input should be (task, seq, feat) and hidden should be (task, 1, feat)
         self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
-
+        
         self.last_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
         if rnn_initialization:
             nn.init.uniform_(self.last_layer.weight, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
             nn.init.uniform_(self.last_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
 
         self.output_activation = output_activation
+        
         self.encoder_type = 'recurrent'
         self.device = torch.device(device)
 
         self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
         self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
 
-    def forward(self, input, do_reset=True, do_pad=False):
-        if do_pad:
-            input, trj = self.pack4rnn(input)
-        else:
-            input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
-            trj, seq, fea = input.shape
-        
+    def forward(self, input, do_reset, is_batch=False):
+        # prepare for batch update
+        if is_batch:
+            input, lengths = self.pack4rnn(input)
+        input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
+        trj, seq, fea = input.shape
+        # reset the LSTM
         if do_reset:
             self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
             self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
-
+        
+        # pass into LSTM
         out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
-        self.hn = hn
-        self.cn = cn
-        # take the last hidden state to predict z
-        #out = out[:, -1, :]
+        self.hn = hn # update LSTM
+        self.cn = cn # update LSTM
 
-        if do_pad:
-            out, lengths = pad_packed_sequence(out, batch_first=True)
-            trj, seq, fea = out.shape
+        if is_batch:
             output = torch.zeros((lengths.sum(), fea)).to(self.device)
             last_length = 0
             for i, length in enumerate(lengths):
-                output[last_length:last_length+length] = out[i, :length, :]
+                output[last_length:last_length+length, :] = out[i, :length, :]
                 last_length += length
             out = output
+        else:
+            out = torch.squeeze(out) # to match the dimension
 
-        # output layer
-        preactivation = self.last_layer(out)
-        embedding = self.output_activation(preactivation)
+        # output layer for Tanh activation
+        out = self.last_layer(out)
+        out = self.output_activation(out)
+
+        embedding = out
         return embedding.squeeze()
 
     def pack4rnn(self, tuple):
@@ -179,13 +181,16 @@ class RecurrentEncoder(nn.Module):
                 trajs.append(torch.concatenate((obss[prev_i:i+1, :], actions[prev_i:i+1, :], next_obss[prev_i:i+1, :], rewards[prev_i:i+1, :]), axis=-1))
                 lengths.append(i+1 - prev_i)
                 prev_i = i + 1    
-        # Step 1: Pad the sequences
-        padded_data = pad_sequence(trajs, batch_first=True)  # (batch_size, max_seq_len, 24)
+        
+        # pad the data
+        largest_length = lengths.max()
+        mdp_dim = trajs[0].shape[-1]
+        padded_data = torch.zeros((len(lengths), largest_length, mdp_dim))
 
-        padded_data = pack_padded_sequence(padded_data, lengths=lengths, batch_first=True, enforce_sorted=False)
+        for i, traj in enumerate(trajs):
+            padded_data[i, :lengths[i], :] = traj
 
-        batch_size = len(trajs)
-        return padded_data, batch_size
+        return padded_data, lengths
     
 if __name__ == "__main__":
     model = RNNModel(14, 12)

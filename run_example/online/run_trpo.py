@@ -14,6 +14,7 @@ from rlkit.nets import MLP, RNNModel, RecurrentEncoder
 from rlkit.modules import ActorProb, Critic, DistCritic, PhiNetwork, DiagGaussian
 from rlkit.utils.load_dataset import qlearning_dataset
 from rlkit.utils.load_env import load_env
+from rlkit.utils.load_cost_fn import load_cost_fn
 from rlkit.utils.zfilter import ZFilter
 from rlkit.buffer import OnlineSampler
 from rlkit.utils.wandb_logger import WandbLogger
@@ -62,6 +63,7 @@ def train(args=get_args()):
         # create env and dataset
         args.task = '-'.join((args.env_type, args.agent_type))
         training_envs, testing_envs, eval_env_idx = load_env(args.task, args.task_name, args.task_num)
+        cost_fn = load_cost_fn(args.task)
 
         # create policy model
         '''state dimension input manipulation for Ss only'''
@@ -77,6 +79,7 @@ def train(args=get_args()):
             episode_len= args.episode_len,
             episode_num= args.episode_num,
             training_envs=training_envs,
+            cost_fn=cost_fn,
             running_state=running_state,
             num_cores=args.num_cores,
             device=args.device,
@@ -126,6 +129,7 @@ def train(args=get_args()):
             policy=policy,
             eval_env=testing_envs,
             eval_env_idx=eval_env_idx,
+            cost_fn=cost_fn,
             sampler=sampler,
             logger=logger,
             epoch=args.epoch,

@@ -14,6 +14,7 @@ from rlkit.nets import MLP, OneHotEncoder, RecurrentEncoder
 from rlkit.modules import ActorProb, Critic, DistCritic, PhiNetwork, DiagGaussian
 from rlkit.utils.load_dataset import qlearning_dataset
 from rlkit.utils.load_env import load_env
+from rlkit.utils.load_cost_fn import load_cost_fn
 from rlkit.utils.zfilter import ZFilter
 from rlkit.buffer import OnlineSkillSampler
 from rlkit.utils.wandb_logger import WandbLogger
@@ -38,7 +39,7 @@ def get_args():
 
     '''Algorithmic and sampling parameters'''
     parser.add_argument("--embed-type", type=str, default='skill') # onehot or purpose or skill
-    parser.add_argument("--embed-dim", type=int, default=4) # one-hot or purpose
+    parser.add_argument("--embed-dim", type=int, default=5) # one-hot or purpose
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
@@ -68,6 +69,7 @@ def train(args=get_args()):
         # create env and dataset
         args.task = '-'.join((args.env_type, args.agent_type))
         training_envs, testing_envs, eval_env_idx = load_env(args.task, args.task_name, args.task_num)
+        cost_fn = load_cost_fn(args.task)
 
         # create policy model
         '''state dimension input manipulation for Ss only'''
@@ -81,13 +83,13 @@ def train(args=get_args()):
                 eval_env_idx=eval_env_idx,
                 device = args.device
             )
-            encoder_optim = None
         elif args.embed_type == 'skill':
             rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
             encoder = RecurrentEncoder(
                 input_size=rnn_size, 
                 hidden_size=rnn_size, 
                 output_size=args.embed_dim,
+                output_activation=torch.nn.Tanh(),
                 device = args.device
             )
             masking_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
@@ -100,7 +102,6 @@ def train(args=get_args()):
             added_masking_indices = [x + args.embed_dim for x in masking_indices]
         else:
             print('...No task embedding is applied')
-            encoder_optim = None
             args.embed_dim = 0
 
         actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh)
@@ -146,6 +147,7 @@ def train(args=get_args()):
             episode_len=args.episode_len,
             episode_num=args.episode_num,
             training_envs=training_envs,
+            cost_fn=cost_fn,
             running_state=running_state,
             masking_indices=added_masking_indices,
             device=args.device,
@@ -181,6 +183,7 @@ def train(args=get_args()):
             policy=policy,
             eval_env=testing_envs,
             eval_env_idx=eval_env_idx,
+            cost_fn = cost_fn,
             sampler=sampler,
             logger=logger,
             epoch=args.epoch,

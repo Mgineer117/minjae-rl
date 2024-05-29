@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from typing import Optional, Dict, List
 from tqdm.auto import trange
 from collections import deque
-from rlkit.buffer import ReplayBuffer, OnlineSampler
+from rlkit.buffer import ReplayBuffer, OnlineSkillSampler
 from rlkit.utils.wandb_logger import WandbLogger
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
@@ -24,6 +24,7 @@ class MFSkillPolicyTrainer:
         policy: BasePolicy,
         eval_env: gym.Env,
         eval_env_idx: int,
+        cost_fn,
         logger: WandbLogger,
         epoch: int = 1000,
         step_per_epoch: int = 1000,
@@ -33,7 +34,7 @@ class MFSkillPolicyTrainer:
         rendering: bool = False,
         lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
         buffer: ReplayBuffer = None,
-        sampler: OnlineSampler = None,
+        sampler: OnlineSkillSampler = None,
         obs_dim: int = None,
         action_dim: int = None,
         pomdp: list = None,
@@ -43,6 +44,7 @@ class MFSkillPolicyTrainer:
         self.policy = policy
         self.eval_env = eval_env
         self.eval_env_idx = eval_env_idx
+        self.cost_fn = cost_fn
         self.buffer = buffer
         self.sampler = sampler
         self.logger = logger
@@ -210,11 +212,11 @@ class MFSkillPolicyTrainer:
         
         mdp = (s, a, ns, np.array([0]), np.array([1]))
         with torch.no_grad():
-            s, _, e_s, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx)
+            s, _, e_s, _, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx)
 
         eval_ep_info_buffer = []
         num_episodes = 0
-        episode_reward, episode_length, episode_success = 0, 0, 0
+        episode_reward, episode_cost, episode_length, episode_success = 0, 0, 0, 0
 
         while num_episodes < self._eval_episodes:
             with torch.no_grad():
@@ -225,6 +227,7 @@ class MFSkillPolicyTrainer:
             except:
                 ns, rew, term, infos = self.eval_env.step(a.flatten())
                 done = term
+            cost = self.cost_fn(s, a, ns)
             try:
                 success = infos['success']
             except:
@@ -237,6 +240,7 @@ class MFSkillPolicyTrainer:
                     self.recorded_frames.append(self.eval_env.render())
             
             episode_reward += rew
+            episode_cost += cost
             episode_success += success
             episode_length += 1
             
@@ -245,17 +249,17 @@ class MFSkillPolicyTrainer:
 
             mdp = (s, a, ns, np.array([rew]), np.array([mask]))
             with torch.no_grad():
-                _, ns, _, e_ns = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=False)
+                _, ns, _, e_ns, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=False)
             
             s = ns
             e_s = e_ns
 
             if done:
                 eval_ep_info_buffer.append(
-                    {"episode_reward": episode_reward, "episode_length": episode_length, "episode_success_rate":episode_success/episode_length}
+                    {"episode_reward": episode_reward, "episode_cost": episode_cost, "episode_length": episode_length, "episode_success_rate":episode_success/episode_length}
                 )
                 num_episodes +=1
-                episode_reward, episode_length = 0, 0
+                episode_reward, episode_cost, episode_length = 0, 0, 0
                 try:
                     s, _ = self.eval_env.reset(seed=seed)
                 except:

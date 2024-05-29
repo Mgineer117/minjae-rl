@@ -12,10 +12,6 @@ from typing import Optional, Union, Tuple, Dict
 from datetime import date
 today = date.today()
 
-def cost_fn(s, a, ns):
-    cost = 0.0
-    return cost
-
 def calculate_workers_and_rounds(environments, episodes_per_env, num_cores):
     if episodes_per_env == 1:
         num_worker_per_env = 1
@@ -54,6 +50,7 @@ class OnlineSkillSampler:
         episode_len: int,
         episode_num: int,
         training_envs: list,
+        cost_fn,
         running_state = None,
         masking_indices = None,
         data_num: int = None,
@@ -67,6 +64,7 @@ class OnlineSkillSampler:
         self.running_state = running_state
         self.masking_indices = masking_indices
         self.data_num = data_num
+        self.cost_fn = cost_fn
 
         self.device = torch.device(device)
 
@@ -76,16 +74,18 @@ class OnlineSkillSampler:
         
         self.num_workers_per_round = num_workers_per_round
         self.num_env_per_round = num_env_per_round
+        self.total_num_worker = sum(self.num_workers_per_round)
         self.episodes_per_worker = episodes_per_worker
         self.thread_batch_size = self.episodes_per_worker * self.episode_len
         self.rounds = rounds
 
         print('Sampling Parameters:')
         print('--------------------')
-        print(f'Core usage for this run           : {self.num_workers_per_round[0]}/{self.num_cores}')
+        print(f'Core usage for this run           : {self.num_workers_per_round[0]}/{self.num_cores} | {multiprocessing.cpu_count()}')
         print(f'Number of Environments each Round : {self.num_env_per_round}')
+        print(f'Total number of Worker            : {self.total_num_worker}')
         print(f'Episodes per Worker               : {self.episodes_per_worker}')
-        torch.set_num_threads(1) # enforce one task for each worker to avoide CPU overscription.
+        torch.set_num_threads(1) # enforce one thread for each worker to avoid CPU overscription.
 
         if self.data_num is not None:
             # to create an enough batch..
@@ -127,13 +127,19 @@ class OnlineSkillSampler:
         return masked_obs
 
     def collect_blind_trajectory(self, pid, queue, env, policy, thread_batch_size, episode_len,
-                           deterministic=False, env_idx=0, seed=0):
+                           episode_num, deterministic=False, env_idx=0, seed=0):
         # estimate the batch size to hava a large batch
         batch_size = thread_batch_size + episode_len
         data = self.get_reset_data(batch_size=batch_size)
 
         current_step = 0
+        ep_num = 0
         while current_step < thread_batch_size:
+            # break criteria
+            if ep_num >= episode_num:
+                #pass
+                break
+
             # var initialization
             _returns = 0
             t = 0 
@@ -156,7 +162,7 @@ class OnlineSkillSampler:
 
             # policy.encode should output s, ns, encoded_s, and encodded_ns
             with torch.no_grad():
-                s, _, e_s, _, _ = policy.encode_obs(mdp, env_idx=env_idx)
+                s, _, e_s, _, _ = policy.encode_obs(mdp, env_idx=env_idx, reset=True)
             
             e_s = self.mask_obs(e_s)
             # begin the episodic loop
@@ -174,7 +180,7 @@ class OnlineSkillSampler:
                     success = infos['success']
                 except:
                     success = 0.0 
-                cost = cost_fn(s, a, ns)
+                cost = self.cost_fn(s, a, ns)
                 done = trunc or term
                 mask = 0 if done else 1
                 
@@ -185,7 +191,7 @@ class OnlineSkillSampler:
                 # state encoding
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
-                    _, ns, _, e_ns, _ = policy.encode_obs(mdp, env_idx=env_idx, reset=False)
+                    _, ns, _, e_ns, _ = policy.encode_obs(mdp, env_idx=env_idx)
                 e_ns = self.mask_obs(e_ns)
 
                 s = ns; e_s = e_ns
@@ -208,6 +214,7 @@ class OnlineSkillSampler:
     
                 if done:        
                     # clear log
+                    ep_num += 1
                     current_step += t
                     _returns = 0
                     try:
@@ -247,13 +254,18 @@ class OnlineSkillSampler:
             return memory
     
     def collect_trajectory(self, pid, queue, env, policy, thread_batch_size, episode_len,
-                           deterministic=False, env_idx=0, seed=0):
+                           episode_num, deterministic=False, env_idx=0, seed=0):
         # estimate the batch size to hava a large batch
         batch_size = thread_batch_size + episode_len
         data = self.get_reset_data(batch_size=batch_size)
 
         current_step = 0
+        ep_num = 0
         while current_step < thread_batch_size:
+            # break criteria
+            if ep_num >= episode_num:
+                #pass
+                break
             # var initialization
             _returns = 0
             t = 0 
@@ -275,7 +287,7 @@ class OnlineSkillSampler:
 
             # policy.encode should output s, ns, encoded_s, and encodded_ns
             with torch.no_grad():
-                s, _, e_s, _, _ = policy.encode_obs(mdp, env_idx=env_idx)
+                s, _, e_s, _, _ = policy.encode_obs(mdp, env_idx=env_idx, reset=True)
             
             # begin the episodic loop
             while t < episode_len:
@@ -292,7 +304,7 @@ class OnlineSkillSampler:
                     success = infos['success']
                 except:
                     success = 0.0 
-                cost = cost_fn(s, a, ns)
+                cost = self.cost_fn(s, a, ns)
                 done = trunc or term
                 mask = 0 if done else 1
                 
@@ -303,7 +315,7 @@ class OnlineSkillSampler:
                 # state encoding
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
-                    _, ns, _, e_ns, _ = policy.encode_obs(mdp, env_idx=env_idx, reset=False)
+                    _, ns, _, e_ns, _ = policy.encode_obs(mdp, env_idx=env_idx)
 
                 s = ns; e_s = e_ns
                 
@@ -325,6 +337,7 @@ class OnlineSkillSampler:
     
                 if done:        
                     # clear log
+                    ep_num += 1
                     current_step += t
                     _returns = 0
                     try:
@@ -385,20 +398,29 @@ class OnlineSkillSampler:
         for round_number in range(self.rounds):
             #print(f"Starting round {round_number + 1}/{self.rounds}")
             processes = []
-            
             #print(f'indices: {env_idx}<->{env_idx+self.num_env_per_round[round_number]}')
             envs = self.training_envs[env_idx:env_idx+self.num_env_per_round[round_number]]
             for env in envs:
                 workers_for_env = self.num_workers_per_round[round_number] // len(envs)
                 for _ in range(workers_for_env):
-                    worker_args = (worker_idx, queue, env, policy, self.thread_batch_size, 
-                               self.episode_len, deterministic, env_idx, seed)
-                    if is_blind:
-                        p = multiprocessing.Process(target=self.collect_blind_trajectory, args=worker_args)
+                    if worker_idx == self.total_num_worker - 1:
+                        '''Main thread process'''
+                        if is_blind:
+                            memory = self.collect_blind_trajectory(worker_idx, None, env, policy, self.thread_batch_size,
+                                                         self.episode_len, self.episode_num, deterministic, env_idx, seed)
+                        else:
+                            memory = self.collect_trajectory(worker_idx, None, env, policy, self.thread_batch_size,
+                                                         self.episode_len, self.episode_num, deterministic, env_idx, seed)
                     else:
-                        p = multiprocessing.Process(target=self.collect_trajectory, args=worker_args)
-                    processes.append(p)
-                    p.start()
+                        '''Sub-thread process'''
+                        worker_args = (worker_idx, queue, env, policy, self.thread_batch_size, 
+                                self.episode_len, self.episode_num, deterministic, env_idx, seed)
+                        if is_blind:
+                            p = multiprocessing.Process(target=self.collect_blind_trajectory, args=worker_args)
+                        else:
+                            p = multiprocessing.Process(target=self.collect_trajectory, args=worker_args)
+                        processes.append(p)
+                        p.start()
                     worker_idx += 1
                 env_idx += 1
             

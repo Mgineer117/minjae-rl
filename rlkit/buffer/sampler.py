@@ -12,12 +12,6 @@ from typing import Optional, Union, Tuple, Dict
 from datetime import date
 today = date.today()
 
-def cost_fn(s, a, ns):
-    cost = 0.0
-    if np.abs(ns[0]) > 0.3:
-        cost += 1.0
-    return cost
-
 def calculate_workers_and_rounds(environments, episodes_per_env, num_cores):
     if episodes_per_env == 1:
         num_worker_per_env = 1
@@ -56,10 +50,11 @@ class OnlineSampler:
         episode_len: int,
         episode_num: int,
         training_envs: list,
+        cost_fn,
         running_state = None,
         num_cores: int = None,
         data_num: int = None,
-        cost_fn = cost_fn,
+
         device: str = "cpu"
     ) -> None:
         self.obs_dim = obs_shape[0]
@@ -90,7 +85,7 @@ class OnlineSampler:
         print(f'Number of Environments each Round : {self.num_env_per_round}')
         print(f'Total number of Worker            : {self.total_num_worker}')
         print(f'Episodes per Worker               : {self.episodes_per_worker}')
-        torch.set_num_threads(1) # enforce one task for each worker to avoide CPU overscription.
+        torch.set_num_threads(1) # enforce one thread for each worker to avoid CPU overscription.
 
         if self.data_num is not None:
             # to create an enough batch..

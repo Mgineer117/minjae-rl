@@ -17,12 +17,6 @@ from rlkit.utils.wandb_logger import WandbLogger
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
 
-def cost_fn(s, a, ns):
-    cost = 0.0
-    if np.abs(ns[0]) > 0.3:
-        cost += 1.0
-    return cost
-
 # model-free policy trainer
 class MFPolicyTrainer:
     def __init__(
@@ -30,6 +24,7 @@ class MFPolicyTrainer:
         policy: BasePolicy,
         eval_env: gym.Env,
         eval_env_idx: int,
+        cost_fn,
         logger: WandbLogger,
         epoch: int = 1000,
         step_per_epoch: int = 1000,
@@ -51,6 +46,7 @@ class MFPolicyTrainer:
         self.eval_env_idx = eval_env_idx
         self.buffer = buffer
         self.sampler = sampler
+        self.cost_fn = cost_fn
         self.logger = logger
 
         self._epoch = epoch
@@ -222,7 +218,7 @@ class MFPolicyTrainer:
             except:
                 ns, rew, term, infos = self.eval_env.step(a.flatten())
                 done = term
-            cost = cost_fn(s, a, ns)
+            cost = self.cost_fn(s, a, ns)
             try:
                 success = infos['success']
             except:
