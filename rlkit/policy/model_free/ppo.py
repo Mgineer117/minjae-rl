@@ -152,11 +152,11 @@ class PPOPolicy(BasePolicy):
 
         '''Update the parameters'''
         for _ in range(self._K_epochs):    
-            _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+            _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
             embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
 
             '''get policy output'''
-            dist = self.actor(embedded_obss)
+            dist = self.actor(embedded_obss.detach()) # detaching the gradient to focus encoder learning with critic reward maximization
             new_logprobs = dist.log_prob(actions)
             dist_entropy = dist.entropy()
             
