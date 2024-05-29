@@ -155,7 +155,7 @@ class RecurrentEncoder(nn.Module):
         self.cn = cn # update LSTM
 
         if is_batch:
-            output = torch.zeros((lengths.sum(), fea)).to(self.device)
+            output = torch.zeros((sum(lengths), fea)).to(self.device)
             last_length = 0
             for i, length in enumerate(lengths):
                 output[last_length:last_length+length, :] = out[i, :length, :]
@@ -183,7 +183,7 @@ class RecurrentEncoder(nn.Module):
                 prev_i = i + 1    
         
         # pad the data
-        largest_length = lengths.max()
+        largest_length = max(lengths)
         mdp_dim = trajs[0].shape[-1]
         padded_data = torch.zeros((len(lengths), largest_length, mdp_dim))
 

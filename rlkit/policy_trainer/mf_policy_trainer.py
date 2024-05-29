@@ -203,7 +203,7 @@ class MFPolicyTrainer:
         
         mdp = (s, a, ns, np.array([0]), np.array([1]))
         with torch.no_grad():
-            s, _, e_s, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx)
+            s, _, e_s, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=True)
 
         eval_ep_info_buffer = []
         num_episodes = 0

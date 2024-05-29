@@ -146,7 +146,7 @@ class PPOSkillPolicy(BasePolicy):
                 t_masks = torch.concatenate((torch.tensor([1.0]).to(self.device)[None, :], masks), axis=0)
 
                 mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
-                embedding = self.encoder(mdp, do_reset=reset, is_batch=True)
+                embedding = self.encoder(mdp, do_reset=reset, is_batch=is_batch)
                 embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
                 masked_embedding = torch.concatenate((embedding[:-1], self.mask_obs(obs, self.masking_indices, dim=-1)), axis=-1)
                 embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)

@@ -52,6 +52,7 @@ class OnlineSkillSampler:
         training_envs: list,
         cost_fn,
         running_state = None,
+        num_cores: int = None,
         masking_indices = None,
         data_num: int = None,
         device: str = "cpu"
@@ -69,7 +70,7 @@ class OnlineSkillSampler:
         self.device = torch.device(device)
 
         # Preprocess for multiprocessing to avoid CPU overscription and deadlock
-        self.num_cores = multiprocessing.cpu_count() #torch.get_num_threads()
+        self.num_cores = num_cores if num_cores is not None else multiprocessing.cpu_count() #torch.get_num_threads()
         num_workers_per_round, num_env_per_round, episodes_per_worker, rounds = calculate_workers_and_rounds(self.training_envs, self.episode_num, self.num_cores)
         
         self.num_workers_per_round = num_workers_per_round
@@ -89,7 +90,7 @@ class OnlineSkillSampler:
 
         if self.data_num is not None:
             # to create an enough batch..
-            self.data_buffer = self.get_reset_data(self.data_num+self.episode_len)
+            self.data_buffer = self.get_reset_data(2*self.data_num)
             self.buffer_last_idx = 0
 
     def save_buffer(self):
@@ -193,8 +194,6 @@ class OnlineSkillSampler:
                 with torch.no_grad():
                     _, ns, _, e_ns, _ = policy.encode_obs(mdp, env_idx=env_idx)
                 e_ns = self.mask_obs(e_ns)
-
-                s = ns; e_s = e_ns
                 
                 # saving the data
                 data['observations'][current_step+t, :] = s
@@ -208,7 +207,8 @@ class OnlineSkillSampler:
                 data['logprobs'][current_step+t, :] = logprob
                 data['env_idxs'][current_step+t, :] = env_idx    
                 data['successes'][current_step+t, :] = success
-            
+
+                s = ns; e_s = e_ns
                 _returns += rew
                 t += 1
     
@@ -258,7 +258,6 @@ class OnlineSkillSampler:
         # estimate the batch size to hava a large batch
         batch_size = thread_batch_size + episode_len
         data = self.get_reset_data(batch_size=batch_size)
-
         current_step = 0
         ep_num = 0
         while current_step < thread_batch_size:
@@ -266,6 +265,7 @@ class OnlineSkillSampler:
             if ep_num >= episode_num:
                 #pass
                 break
+            
             # var initialization
             _returns = 0
             t = 0 
@@ -316,8 +316,6 @@ class OnlineSkillSampler:
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
                     _, ns, _, e_ns, _ = policy.encode_obs(mdp, env_idx=env_idx)
-
-                s = ns; e_s = e_ns
                 
                 # saving the data
                 data['observations'][current_step+t, :] = s
@@ -331,7 +329,8 @@ class OnlineSkillSampler:
                 data['logprobs'][current_step+t, :] = logprob
                 data['env_idxs'][current_step+t, :] = env_idx    
                 data['successes'][current_step+t, :] = success
-            
+
+                s = ns; e_s = e_ns
                 _returns += rew
                 t += 1
     
@@ -427,12 +426,13 @@ class OnlineSkillSampler:
             for p in processes:
                 p.join()
             
-        worker_memories = [None] * worker_idx
-        for _ in range(worker_idx): 
+        worker_memories = [None] * (worker_idx - 1)
+        for _ in range(worker_idx - 1): 
             pid, worker_memory = queue.get()
             worker_memories[pid] = worker_memory
-        
-        memory = worker_memories[0]
+        for worker_memory in worker_memories:
+            for k in memory:
+                memory[k] = np.concatenate((memory[k], worker_memory[k]), axis=0)
         for worker_memory in worker_memories[1:]:
             for k in memory:
                 memory[k] = np.concatenate((memory[k], worker_memory[k]), axis=0)

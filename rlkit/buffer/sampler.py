@@ -157,7 +157,7 @@ class OnlineSampler:
 
             # policy.encode should output s, ns, encoded_s, and encodded_ns
             with torch.no_grad():
-                s, _, e_s, _ = policy.encode_obs(mdp, env_idx=env_idx)
+                s, _, e_s, _ = policy.encode_obs(mdp, env_idx=env_idx, reset=True)
             
             # begin the episodic loop
             while t < episode_len:
@@ -185,7 +185,7 @@ class OnlineSampler:
                 # state encoding
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
-                    _, ns, _, e_ns = policy.encode_obs(mdp, env_idx=env_idx, reset=False)
+                    _, ns, _, e_ns = policy.encode_obs(mdp, env_idx=env_idx)
                 
                 # saving the data
                 data['observations'][current_step+t, :] = s
@@ -214,6 +214,7 @@ class OnlineSampler:
                     except:
                         s = env.reset(seed=seed)
                     break
+                
         memory = dict(
             observations=data['observations'].astype(np.float32),
             actions=data['actions'].astype(np.float32),

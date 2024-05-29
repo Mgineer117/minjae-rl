@@ -83,7 +83,7 @@ class PPOPolicy(BasePolicy):
             action, logprob = self.actforward(obs, deterministic)
         return action.cpu().numpy(), logprob.cpu().numpy()
     
-    def encode_obs(self, mdp_tuple, env_idx = None, reset=True):
+    def encode_obs(self, mdp_tuple, env_idx = None, reset=False):
         '''
         Given mdp = (s, a, s', r, mask)
         return embedding, embedded_next_obs = embedding is attached to the next_ob
@@ -124,7 +124,7 @@ class PPOPolicy(BasePolicy):
                 t_masks = torch.concatenate((torch.tensor([1.0]).to(self.device)[None, :], masks), axis=0)
 
                 mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
-                embedding = self.encoder(mdp, do_pad=True)
+                embedding = self.encoder(mdp, do_reset=reset, is_batch=is_batch)
                 embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
                 embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
                 return obs, next_obs, embedded_obs, embedded_next_obs
@@ -149,11 +149,11 @@ class PPOPolicy(BasePolicy):
         successes = torch.from_numpy(batch['successes']).to(self.device)
         
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
-        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
-
-        with torch.no_grad():
-            values = self.critic(embedded_obss)
         
+        with torch.no_grad():
+            _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
+            values = self.critic(embedded_obss)
+
         """get advantage estimation from the trajectories"""
         advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
         episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
