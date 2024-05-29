@@ -17,9 +17,8 @@ class PPOPolicy(BasePolicy):
             self, 
             actor: nn.Module, 
             critic: nn.Module,  
+            encoder: BaseEncoder,
             optimizer: torch.optim.Optimizer,
-            encoder: BaseEncoder = None,
-            encoder_optim: torch.optim.Optimizer = None,
             tau: float = 0.95,
             gamma: float = 0.99,
             K_epochs: int = 3,
@@ -31,13 +30,8 @@ class PPOPolicy(BasePolicy):
 
         self.actor = actor
         self.critic = critic
-        self.optimizer = optimizer
-        
-        if encoder is not None:
-            self.encoder = encoder
-        else:
-            self.encoder = BaseEncoder(device=device)
-        self.encoder_optim = encoder_optim
+        self.encoder = encoder
+        self.optimizer = optimizer            
 
         self.loss_fn = torch.nn.MSELoss()
 
@@ -158,8 +152,7 @@ class PPOPolicy(BasePolicy):
 
         '''Update the parameters'''
         for _ in range(self._K_epochs):    
-            with torch.no_grad():
-                _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+            _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
             embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
 
             '''get policy output'''

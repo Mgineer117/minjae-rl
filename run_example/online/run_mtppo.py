@@ -11,7 +11,7 @@ import numpy as np
 import torch
 
 from rlkit.utils.utils import seed_all, select_device
-from rlkit.nets import MLP, OneHotEncoder, RecurrentEncoder
+from rlkit.nets import MLP, OneHotEncoder, RecurrentEncoder, BaseEncoder
 from rlkit.modules import ActorProb, Critic, DistCritic, PhiNetwork, DiagGaussian
 from rlkit.utils.load_dataset import qlearning_dataset
 from rlkit.utils.load_env import load_env
@@ -39,7 +39,7 @@ def get_args():
     parser.add_argument('--task-num', type=int, default=None) # 2, 3, 4 for MT1 and ML1
 
     '''Algorithmic and sampling parameters'''
-    parser.add_argument("--embed-type", type=str, default='purpose') # onehot or purpose
+    parser.add_argument("--embed-type", type=str, default='purpose') # onehot or purpose or skill_mse
     parser.add_argument("--embed-dim", type=int, default=5) # one-hot or purpose
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
     parser.add_argument('--num-cores', type=int, default=None)
@@ -79,30 +79,6 @@ def train(args=get_args()):
         args.action_dim = np.prod(training_envs[0].action_space.shape)
         args.max_action = training_envs[0].action_space.high[0]
 
-        # define encoder if there is one
-        if args.embed_type == 'onehot': # for multi-task only
-            args.embed_dim = len(training_envs)
-            encoder = OneHotEncoder(
-                embed_dim=args.embed_dim,
-                eval_env_idx=eval_env_idx,
-                device = args.device
-            )
-            encoder_optim = None
-        elif args.embed_type == 'purpose':
-            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
-            encoder = RecurrentEncoder(
-                input_size=rnn_size, 
-                hidden_size=rnn_size, 
-                output_size=args.embed_dim,
-                output_activation=torch.nn.Tanh(),
-                device = args.device
-            )
-            encoder_optim = torch.optim.Adam(encoder.parameters(), lr=args.critic_lr)
-        else:
-            print('...No task embedding is applied')
-            encoder_optim = None
-            args.embed_dim = 0
-
         # define necessary ingredients for training
         running_state = ZFilter(args.obs_shape, clip=5)
 
@@ -124,11 +100,33 @@ def train(args=get_args()):
                           device=args.device)   
                 
         critic = Critic(critic_backbone, device=args.device)
-
-        optimizer = torch.optim.AdamW([
+        
+        optimizer_params = [
                         {'params': actor.parameters(), 'lr': args.actor_lr},
-                        {'params': critic.parameters(), 'lr': args.critic_lr}
-                    ])  
+                        {'params': critic.parameters(), 'lr': args.critic_lr},
+                    ]
+
+        # define encoder if there is one
+        if args.embed_type == 'onehot': # for multi-task only
+            args.embed_dim = len(training_envs)
+            encoder = OneHotEncoder(
+                embed_dim=args.embed_dim,
+                eval_env_idx=eval_env_idx,
+                device = args.device
+            )
+        elif args.embed_type == 'purpose' or 'skill_mse':
+            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
+            encoder = RecurrentEncoder(
+                input_size=rnn_size, 
+                hidden_size=rnn_size, 
+                output_size=args.embed_dim,
+                output_activation=torch.nn.Tanh(),
+                device = args.device
+            )
+            optimizer_params.append({'params': encoder.parameters(), 'lr': args.actor_lr})
+        else:
+            encoder = BaseEncoder(device=args.device)
+            args.embed_dim = 0
 
         # import pre-trained model before defining actual models
         if args.import_policy:
@@ -153,9 +151,8 @@ def train(args=get_args()):
         policy = PPOPolicy(
             actor=actor,
             critic=critic,
-            optimizer=optimizer,
             encoder=encoder,
-            encoder_optim=encoder_optim,
+            optimizer=torch.optim.AdamW(optimizer_params),
             K_epochs=args.K_epochs,
             eps_clip=args.eps_clip,
             device=args.device
