@@ -1,5 +1,6 @@
 import numpy as np
-
+import pickle
+import os
 import torch
 import torch.nn as nn
 import math
@@ -113,7 +114,7 @@ class TRPOPolicy(BasePolicy):
             action, logprob = self.actforward(obs, deterministic)
         return action.cpu().numpy(), logprob.cpu().numpy()
 
-    def encode_obs(self, mdp_tuple, env_idx = None, reset=True):
+    def encode_obs(self, mdp_tuple, env_idx = None, reset=False):
         '''
         Given mdp = (s, a, s', r, mask)
         return embedding, embedded_next_obs = embedding is attached to the next_ob
@@ -154,7 +155,7 @@ class TRPOPolicy(BasePolicy):
                 t_masks = torch.concatenate((torch.tensor([1.0]).to(self.device)[None, :], masks), axis=0)
 
                 mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
-                embedding = self.encoder(mdp, do_pad=True)
+                embedding = self.encoder(mdp, do_reset=reset, is_batch=is_batch)
                 embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
                 embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
                 return obs, next_obs, embedded_obs, embedded_next_obs
@@ -250,3 +251,13 @@ class TRPOPolicy(BasePolicy):
         }
         
         return result 
+    
+    def save_model(self, logdir, epoch, running_state=None, is_best=False):
+        # save checkpoint
+        if is_best:
+            path = os.path.join(logdir, "best_model.p")
+        else:
+            path = os.path.join(logdir, "model_" + str(epoch) + ".p")
+        pickle.dump((self.actor, self.critic), open(path, 'wb'))
+        if running_state is not None:
+            pickle.dump((self.actor, self.critic, running_state), open(path, 'wb'))

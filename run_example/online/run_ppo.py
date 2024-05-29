@@ -5,6 +5,7 @@ import uuid
 import argparse
 import random
 import os
+import pickle
 
 import numpy as np
 import torch
@@ -70,25 +71,13 @@ def train(args=get_args()):
         training_envs, testing_envs, eval_env_idx = load_env(args.task, args.task_name, args.task_num, render_mode='rgb_array')
         cost_fn = load_cost_fn(args.task)
 
-        # create policy model
-        '''state dimension input manipulation for Ss only'''
+        # get dimensional parameters
         args.obs_shape = (training_envs[0].observation_space.shape[0],)
         args.action_dim = np.prod(training_envs[0].action_space.shape)
         args.max_action = training_envs[0].action_space.high[0]
 
+        # define necessary ingredients for training
         running_state = ZFilter(args.obs_shape, clip=5)
-
-        sampler = OnlineSampler(
-            obs_shape=args.obs_shape,
-            action_dim=args.action_dim,
-            episode_len=args.episode_len,
-            episode_num=args.episode_num,
-            training_envs=training_envs,
-            cost_fn=cost_fn,
-            running_state=running_state,
-            num_cores=args.num_cores,
-            device=args.device,
-        )
 
         actor_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh,)
         critic_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=args.hidden_dims, activation=torch.nn.Tanh,)
@@ -114,6 +103,26 @@ def train(args=get_args()):
                         {'params': critic.parameters(), 'lr': args.critic_lr}
                     ])
         
+        # import pre-trained model before defining actual models
+        if args.import_policy:
+            try:
+                actor, critic, running_state = pickle.load(open('model/model.p', "rb"))
+            except:
+                actor, critic = pickle.load(open('model/model.p', "rb"))
+        
+        # define training components
+        sampler = OnlineSampler(
+            obs_shape=args.obs_shape,
+            action_dim=args.action_dim,
+            episode_len=args.episode_len,
+            episode_num=args.episode_num,
+            training_envs=training_envs,
+            cost_fn=cost_fn,
+            running_state=running_state,
+            num_cores=args.num_cores,
+            device=args.device,
+        )
+
         policy = PPOPolicy(
             actor=actor,
             critic=critic,
@@ -148,7 +157,6 @@ def train(args=get_args()):
             rendering=args.rendering,
             obs_dim=args.obs_shape[0],
             action_dim=args.action_dim,
-            import_policy=args.import_policy,
             device=args.device,
         )
 

@@ -1,5 +1,6 @@
 import numpy as np
-
+import pickle
+import os
 import torch
 import torch.nn as nn
 import math
@@ -348,3 +349,13 @@ class CPOPolicy(BasePolicy):
         }
         
         return result 
+    
+    def save_model(self, logdir, epoch, running_state=None, is_best=False):
+        # save checkpoint
+        if is_best:
+            path = os.path.join(logdir, "best_model.p")
+        else:
+            path = os.path.join(logdir, "model_" + str(epoch) + ".p")
+        pickle.dump((self.actor, self.r_critic, self.c_critic), open(path, 'wb'))
+        if running_state is not None:
+            pickle.dump((self.actor, self.r_critic, self.c_critic, running_state), open(path, 'wb'))

@@ -38,7 +38,7 @@ class MFPolicyTrainer:
         obs_dim: int = None,
         action_dim: int = None,
         pomdp: list = None,
-        import_policy: bool = False,
+        cost_limit: float = 0.0,
         device=None,
     ) -> None:
         self.policy = policy
@@ -61,16 +61,14 @@ class MFPolicyTrainer:
         self.pomdp = pomdp
 
         self._device = device
+        
+        self.last_max_reward = 0.0
+        self.cost_limit = cost_limit
 
         self.current_epoch = 0
         self.log_interval = 10
         self.rendering = rendering
         self.recorded_frames = []
-
-        if import_policy:
-            print('...loading previous model')
-            self.policy.load_state_dict(torch.load('model/model.pth'))
-            self.policy.eval()
 
     def train(self, seed) -> Dict[str, float]:
         start_time = time.time()
@@ -130,7 +128,8 @@ class MFPolicyTrainer:
     def online_train(self, seed) -> Dict[str, float]:
         start_time = time.time()
 
-        last_10_performance = deque(maxlen=10)
+        last_10_reward_performance = deque(maxlen=10)
+        last_10_cost_performance = deque(maxlen=10)
         # train loop
         for e in trange(self._epoch, desc=f"Epoch"):
             self.current_epoch = e
@@ -163,23 +162,35 @@ class MFPolicyTrainer:
             try:
                 norm_ep_rew_mean = self.eval_env.get_normalized_score(ep_reward_mean) * 100
                 norm_ep_rew_std = self.eval_env.get_normalized_score(ep_reward_std) * 100
-                last_10_performance.append(norm_ep_rew_mean)
+                norm_ep_cost_mean = self.eval_env.get_normalized_score(ep_cost_mean) * 100
+                norm_ep_cost_std = self.eval_env.get_normalized_score(ep_cost_std) * 100
+
+                last_10_reward_performance.append(norm_ep_rew_mean)
+                last_10_cost_performance.append(norm_ep_cost_mean)
                 norm_data = {
                     "eval/normalized_episode_reward_std": norm_ep_rew_std,
                     "eval/normalized_episode_reward": norm_ep_rew_mean,
+                    "eval/normalized_episode_cost_std": norm_ep_cost_mean,
+                    "eval/normalized_episode_cost": norm_ep_cost_std,
                 }
                 eval_data.update(norm_data)
             except:
-                last_10_performance.append(ep_reward_mean)
+                last_10_reward_performance.append(ep_reward_mean)
+                last_10_cost_performance.append(ep_cost_mean)
             self.logger.store(**eval_data)        
             self.logger.write(int(e*self._step_per_epoch + it), display=False)
+            
+            # save checkpoint
             if self.current_epoch % self.log_interval == 0:
-                # save checkpoint
-                torch.save(self.policy.state_dict(), os.path.join(self.logger.checkpoint_dir, "policy_" +str(e)+ ".pth"))
+                self.policy.save_model(self.logger.checkpoint_dir, e, self.sampler.running_state)
+            # save the best model
+            if np.mean(last_10_reward_performance) >= self.last_max_reward and np.mean(last_10_cost_performance) <= self.cost_limit:
+                self.policy.save_model(self.logger.log_dir, e, self.sampler.running_state, is_best=True)
+                self.last_max_reward = np.mean(last_10_reward_performance)
         
         self.logger.print("total time: {:.2f}s".format(time.time() - start_time))
-        torch.save(self.policy.state_dict(), os.path.join(self.logger.log_dir, "policy.pth"))
-        return {"last_10_performance": np.mean(last_10_performance)}
+        return {"last_10_reward_performance": np.mean(last_10_reward_performance),
+                "last_10_cost_performance": np.mean(last_10_cost_performance)}
     
     def normalize_obs(self, obs):
         if self.sampler.running_state is not None: # check if there is running state enabled
@@ -240,7 +251,7 @@ class MFPolicyTrainer:
 
             mdp = (s, a, ns, np.array([rew]), np.array([mask]))
             with torch.no_grad():
-                _, ns, _, e_ns = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=False)
+                _, ns, _, e_ns = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx)
             
             s = ns
             e_s = e_ns

@@ -1,8 +1,8 @@
 import numpy as np
-
+import pickle
+import os
 import torch
 import torch.nn as nn
-from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 import math
 import time
 from copy import deepcopy
@@ -16,11 +16,8 @@ class PPOPolicy(BasePolicy):
     def __init__(
             self, 
             actor: nn.Module, 
-            #actor_optim: torch.optim.Optimizer,
-            #actor_old: nn.Module, 
             critic: nn.Module,  
             optimizer: torch.optim.Optimizer,
-            #critic_optim: torch.optim.Optimizer,
             encoder: BaseEncoder = None,
             encoder_optim: torch.optim.Optimizer = None,
             tau: float = 0.95,
@@ -195,3 +192,13 @@ class PPOPolicy(BasePolicy):
         }
         
         return result 
+    
+    def save_model(self, logdir, epoch, running_state=None, is_best=False):
+        # save checkpoint
+        if is_best:
+            path = os.path.join(logdir, "best_model.p")
+        else:
+            path = os.path.join(logdir, "model_" + str(epoch) + ".p")
+        pickle.dump((self.actor, self.critic), open(path, 'wb'))
+        if running_state is not None:
+            pickle.dump((self.actor, self.critic, running_state), open(path, 'wb'))

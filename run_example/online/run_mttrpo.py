@@ -5,6 +5,7 @@ import uuid
 import argparse
 import random
 import os
+import pickle 
 
 import numpy as np
 import torch
@@ -72,11 +73,12 @@ def train(args=get_args()):
         training_envs, testing_envs, eval_env_idx = load_env(args.task, args.task_name, args.task_num)
         cost_fn = load_cost_fn(args.task)
 
-        # create policy model
-        '''state dimension input manipulation for Ss only'''
+        # get dimensional parameters
         args.obs_shape = (training_envs[0].observation_space.shape[0],)
         args.action_dim = np.prod(training_envs[0].action_space.shape)
         args.max_action = training_envs[0].action_space.high[0]
+
+        # define encoder if there is one
         if args.embed_type == 'onehot': # for multi-task only
             args.embed_dim = len(training_envs)
             encoder = OneHotEncoder(
@@ -99,6 +101,9 @@ def train(args=get_args()):
             encoder_optim = None
             args.embed_dim = 0
         
+        # define necessary ingredients for training
+        running_state = ZFilter(args.obs_shape, clip=5)
+
         actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh)
         critic_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), activation=torch.nn.Tanh, hidden_dims=args.hidden_dims)
         
@@ -119,8 +124,14 @@ def train(args=get_args()):
         critic = Critic(critic_backbone, device = args.device)
         critic_optim = torch.optim.Adam(critic.parameters(), lr=args.critic_lr)
 
-        running_state = ZFilter(args.obs_shape, clip=5)
+        # import pre-trained model before defining actual models
+        if args.import_policy:
+            try:
+                actor, critic, running_state = pickle.load(open('model/model.p', "rb"))
+            except:
+                actor, critic = pickle.load(open('model/model.p', "rb"))
 
+        # define training components    
         sampler = OnlineSampler(
             obs_shape=args.obs_shape,
             action_dim=args.action_dim,
