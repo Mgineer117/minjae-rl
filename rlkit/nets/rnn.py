@@ -134,12 +134,6 @@ class RecurrentEncoder(nn.Module):
         self.encoder_type = 'recurrent'
         self.device = torch.device(device)
 
-        # initialize LSTM hidden state with very large batch (50 trj; usually 20 trj)
-        self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
-        self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
-        #self.hn = torch.zeros((1, 50, self.rnn_hidden_dim)).to(self.device)
-        #self.cn = torch.zeros((1, 50, self.rnn_hidden_dim)).to(self.device)
-
     def forward(self, input, do_reset, is_batch=False):
         # prepare for batch update
         if is_batch:
@@ -150,13 +144,10 @@ class RecurrentEncoder(nn.Module):
         if do_reset:
             self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
             self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
-            #self.cn = torch.zeros(self.cn.shape).to(self.device)
         
         if is_batch:
             # pass into LSTM with allowing automatic initialization for each trajectory
-            #out, (hn, cn) = self.lstm(input, (self.last_batch_hn, self.cn))
-            #self.last_batch_hn = hn # to construct a posterior for fast meta-adaptation
-            out, _ = self.lstm(input)
+            out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
             output = torch.zeros((sum(lengths), fea)).to(self.device)
             last_length = 0
             for i, length in enumerate(lengths):

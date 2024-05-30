@@ -40,7 +40,7 @@ E_LOSS_TYPE = ['mse', 'minimax']
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", type=str, default="popodice")
+    parser.add_argument("--project", type=str, default="offpurpose")
     parser.add_argument("--name", type=str, default=None)
     parser.add_argument("--algo-name", type=str, default="popodice")
     parser.add_argument("--task", type=str, default=ENV_NAME)
@@ -98,7 +98,7 @@ def train(args=get_args()):
     for seed in args.seeds:
         # create env and dataset
         '''eval_env'''
-        #env = gym.make(args.task)
+        env = gym.make(args.task)
         '''call data'''
         #dataset = d4rl.qlearning_dataset(env)
         args.obs_shape = (env.observation_space.shape[0],)
