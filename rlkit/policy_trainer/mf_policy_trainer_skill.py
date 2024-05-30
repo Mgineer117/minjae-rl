@@ -282,6 +282,7 @@ class MFSkillPolicyTrainer:
                 self.save_rendering(self.logger.checkpoint_dir)
         return {
             "eval/episode_reward": [ep_info["episode_reward"] for ep_info in eval_ep_info_buffer],
+            "eval/episode_cost": [ep_info["episode_cost"] for ep_info in eval_ep_info_buffer],
             "eval/episode_length": [ep_info["episode_length"] for ep_info in eval_ep_info_buffer],
             "eval/episode_success_rate": [ep_info["episode_success_rate"] for ep_info in eval_ep_info_buffer],
         }

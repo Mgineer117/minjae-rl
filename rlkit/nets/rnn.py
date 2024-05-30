@@ -227,40 +227,31 @@ class RecurrentOfflineEncoder(nn.Module):
         self.device = torch.device(device)
 
         # initialize LSTM hidden state with very large batch (50 trj; usually 20 trj)
-        self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
-        self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
-        #self.hn = torch.zeros((1, 50, self.rnn_hidden_dim)).to(self.device)
-        #self.cn = torch.zeros((1, 50, self.rnn_hidden_dim)).to(self.device)
+        #self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
+        #self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
+        self.hn = torch.zeros((1, 100, self.rnn_hidden_dim)).to(self.device)
+        self.cn = torch.zeros((1, 100, self.rnn_hidden_dim)).to(self.device)
 
-    def forward(self, input, do_reset, is_batch=False):
+    def forward(self, input, do_reset):
         # prepare for batch update
-        if is_batch:
-            input, lengths = self.pack4rnn(input)
+        input, lengths = self.pack4rnn(input)
         input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
         trj, seq, fea = input.shape
+
         # reset the LSTM
         if do_reset:
-            self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
-            self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
+            #self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
+            #self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
             #self.cn = torch.zeros(self.cn.shape).to(self.device)
         
-        if is_batch:
-            # pass into LSTM with allowing automatic initialization for each trajectory
-            #out, (hn, cn) = self.lstm(input, (self.last_batch_hn, self.cn))
-            #self.last_batch_hn = hn # to construct a posterior for fast meta-adaptation
-            out, _ = self.lstm(input)
-            output = torch.zeros((sum(lengths), fea)).to(self.device)
-            last_length = 0
-            for i, length in enumerate(lengths):
-                output[last_length:last_length+length, :] = out[i, :length, :]
-                last_length += length
-            out = output
-        else:
-            # pass into LSTM
-            out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
-            self.hn = hn # update LSTM
-            self.cn = cn # update LSTM
-            out = torch.squeeze(out) # to match the dimension
+        # pass into LSTM with allowing automatic initialization for each trajectory
+        out, _ = self.lstm(input)
+        output = torch.zeros((sum(lengths), fea)).to(self.device)
+        last_length = 0
+        for i, length in enumerate(lengths):
+            output[last_length:last_length+length, :] = out[i, :length, :]
+            last_length += length
+        out = output
 
         # output layer for Tanh activation
         out = self.last_layer(out)
