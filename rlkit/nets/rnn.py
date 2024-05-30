@@ -177,6 +177,27 @@ class RecurrentEncoder(nn.Module):
         embedding = out
         return embedding.squeeze()
     
+    def pack4rnn(self, tuple):
+        obss, actions, next_obss, rewards, masks = tuple
+        trajs = []
+        lengths = []
+        prev_i = 0
+        for i, mask in enumerate(masks):
+            if mask == 0:
+                trajs.append(torch.concatenate((obss[prev_i:i+1, :], actions[prev_i:i+1, :], next_obss[prev_i:i+1, :], rewards[prev_i:i+1, :]), axis=-1))
+                lengths.append(i+1 - prev_i)
+                prev_i = i + 1    
+        
+        # pad the data
+        largest_length = max(lengths)
+        mdp_dim = trajs[0].shape[-1]
+        padded_data = torch.zeros((len(lengths), largest_length, mdp_dim))
+
+        for i, traj in enumerate(trajs):
+            padded_data[i, :lengths[i], :] = traj
+
+        return padded_data, lengths
+    
 class RecurrentOfflineEncoder(nn.Module):
     def __init__(
             self,

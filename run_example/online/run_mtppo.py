@@ -79,6 +79,29 @@ def train(args=get_args()):
         args.action_dim = np.prod(training_envs[0].action_space.shape)
         args.max_action = training_envs[0].action_space.high[0]
 
+        # define encoder if there is one
+        optimizer_params = []
+        if args.embed_type == 'onehot': # for multi-task only
+            args.embed_dim = len(training_envs)
+            encoder = OneHotEncoder(
+                embed_dim=args.embed_dim,
+                eval_env_idx=eval_env_idx,
+                device = args.device
+            )
+        elif args.embed_type == 'purpose' or 'skill_mse':
+            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
+            encoder = RecurrentEncoder(
+                input_size=rnn_size, 
+                hidden_size=rnn_size, 
+                output_size=args.embed_dim,
+                output_activation=torch.nn.Tanh(),
+                device = args.device
+            )
+            optimizer_params.append({'params': encoder.parameters(), 'lr': args.actor_lr})
+        else:
+            args.embed_dim = 0
+            encoder = BaseEncoder(device=args.device)
+
         # define necessary ingredients for training
         running_state = ZFilter(args.obs_shape, clip=5)
 
@@ -101,33 +124,9 @@ def train(args=get_args()):
                 
         critic = Critic(critic_backbone, device=args.device)
         
-        optimizer_params = [
-                        {'params': actor.parameters(), 'lr': args.actor_lr},
-                        {'params': critic.parameters(), 'lr': args.critic_lr},
-                    ]
-
-        # define encoder if there is one
-        if args.embed_type == 'onehot': # for multi-task only
-            args.embed_dim = len(training_envs)
-            encoder = OneHotEncoder(
-                embed_dim=args.embed_dim,
-                eval_env_idx=eval_env_idx,
-                device = args.device
-            )
-        elif args.embed_type == 'purpose' or 'skill_mse':
-            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
-            encoder = RecurrentEncoder(
-                input_size=rnn_size, 
-                hidden_size=rnn_size, 
-                output_size=args.embed_dim,
-                output_activation=torch.nn.Tanh(),
-                device = args.device
-            )
-            optimizer_params.append({'params': encoder.parameters(), 'lr': args.actor_lr})
-        else:
-            encoder = BaseEncoder(device=args.device)
-            args.embed_dim = 0
-
+        optimizer_params.append({'params': actor.parameters(), 'lr': args.actor_lr})
+        optimizer_params.append({'params': critic.parameters(), 'lr': args.critic_lr},)
+            
         # import pre-trained model before defining actual models
         if args.import_policy:
             try:
