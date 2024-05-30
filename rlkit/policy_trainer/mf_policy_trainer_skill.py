@@ -233,7 +233,7 @@ class MFSkillPolicyTrainer:
             mdp = (s, a, ns, np.array([0]), np.array([1]))
             with torch.no_grad():
                 s, _, e_s, _, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=True)
-            e_s = self.mask_obs(e_s)
+            e_s = self.mask_obs(e_s.cpu())
 
             eval_ep_info_buffer = []            
             episode_reward, episode_cost, episode_length, episode_success = 0, 0, 0, 0
@@ -271,7 +271,7 @@ class MFSkillPolicyTrainer:
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
                     _, ns, _, e_ns, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=False)
-                e_ns = self.mask_obs(e_ns)
+                e_ns = self.mask_obs(e_ns.cpu())
 
                 s = ns
                 e_s = e_ns
