@@ -32,7 +32,7 @@ def get_args():
     parser.add_argument("--logdir", type=str, default="log")
 
     parser.add_argument('--env-type', type=str, default='Gym') # Gym or MetaGym
-    parser.add_argument('--agent-type', type=str, default='InvertedPendulum') # MT1, ML45, Hopper, Ant
+    parser.add_argument('--agent-type', type=str, default='Ant') # MT1, ML45, Hopper, Ant
     parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
     parser.add_argument('--task-num', type=int, default=1) # 10, 45, 50
 
@@ -40,15 +40,16 @@ def get_args():
     parser.add_argument('--num-cores', type=int, default=None)
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
-    parser.add_argument("--cost_limit", type=float, default=30.0)
+    parser.add_argument("--cost_limit", type=float, default=120.0)
     parser.add_argument("--critic-lr", type=float, default=3e-4)
     parser.add_argument('--epoch', type=int, default=3000)
     parser.add_argument("--step-per-epoch", type=int, default=50)
     parser.add_argument('--episode_len', type=int, default=1000)
-    parser.add_argument('--episode_num', type=int, default=1)
+    parser.add_argument('--episode_num', type=int, default=4)
     parser.add_argument("--eval_episodes", type=int, default=5)
     parser.add_argument("--grad-norm", type=bool, default=False)
-    parser.add_argument("--rendering", type=bool, default=False)
+    parser.add_argument("--rendering", type=bool, default=True)
+    parser.add_argument("--data_num", type=int, default=None)
     parser.add_argument("--import-policy", type=bool, default=False)
     parser.add_argument("--gpu-idx", type=int, default=0)
     parser.add_argument("--verbose", type=bool, default=True)
@@ -104,6 +105,7 @@ def train(args=get_args()):
         
         # import pre-trained model before defining actual models
         if args.import_policy:
+            print("Importing previous model......")
             try:
                 actor, r_critic, c_critic, running_state = pickle.load(open('model/model.p', "rb"))
             except:

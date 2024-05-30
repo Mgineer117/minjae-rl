@@ -238,7 +238,7 @@ class MFPolicyTrainer:
             mask = 0 if done else 1
             
             if self.current_epoch % self.log_interval == 0:
-                if self.rendering or num_episodes == 0:
+                if self.rendering and num_episodes == 0:
                     self.recorded_frames.append(self.eval_env.render())
             
             episode_reward += rew
@@ -281,7 +281,7 @@ class MFPolicyTrainer:
         directory = os.path.join(path, 'video')
         if not os.path.exists(directory):
             os.makedirs(directory)
-        file_name = 'rendering' + str(self.current_epoch) +'.avi'
+        file_name = 'rendering' + str(self.current_epoch*self._step_per_epoch) +'.avi'
         output_file = os.path.join(directory, file_name)
         fourcc = cv2.VideoWriter_fourcc(*'XVID')  # Codec for AVI file
         fps = 120

@@ -106,7 +106,6 @@ class RNNModel(nn.Module):
         output = output.view(batch_size, num_timesteps, -1)
         return output, h_state
 
-
 class RecurrentEncoder(nn.Module):
     def __init__(
             self,
@@ -135,8 +134,11 @@ class RecurrentEncoder(nn.Module):
         self.encoder_type = 'recurrent'
         self.device = torch.device(device)
 
+        # initialize LSTM hidden state with very large batch (50 trj; usually 20 trj)
         self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
         self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
+        #self.hn = torch.zeros((1, 50, self.rnn_hidden_dim)).to(self.device)
+        #self.cn = torch.zeros((1, 50, self.rnn_hidden_dim)).to(self.device)
 
     def forward(self, input, do_reset, is_batch=False):
         # prepare for batch update
@@ -148,13 +150,13 @@ class RecurrentEncoder(nn.Module):
         if do_reset:
             self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
             self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
+            #self.cn = torch.zeros(self.cn.shape).to(self.device)
         
-        # pass into LSTM
-        out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
-        self.hn = hn # update LSTM
-        self.cn = cn # update LSTM
-
         if is_batch:
+            # pass into LSTM with allowing automatic initialization for each trajectory
+            #out, (hn, cn) = self.lstm(input, (self.last_batch_hn, self.cn))
+            #self.last_batch_hn = hn # to construct a posterior for fast meta-adaptation
+            out, _ = self.lstm(input)
             output = torch.zeros((sum(lengths), fea)).to(self.device)
             last_length = 0
             for i, length in enumerate(lengths):
@@ -162,6 +164,81 @@ class RecurrentEncoder(nn.Module):
                 last_length += length
             out = output
         else:
+            # pass into LSTM
+            out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
+            self.hn = hn # update LSTM
+            self.cn = cn # update LSTM
+            out = torch.squeeze(out) # to match the dimension
+
+        # output layer for Tanh activation
+        out = self.last_layer(out)
+        out = self.output_activation(out)
+
+        embedding = out
+        return embedding.squeeze()
+    
+class RecurrentOfflineEncoder(nn.Module):
+    def __init__(
+            self,
+            input_size: int,
+            hidden_size:int,
+            output_size: int,
+            rnn_initialization: bool = True,
+            output_activation=identity,
+            device="cpu"
+    ):
+        super().__init__()
+        self.input_size = input_size
+        self.rnn_hidden_dim = hidden_size
+        self.embed_dim = output_size
+
+        # input should be (task, seq, feat) and hidden should be (task, 1, feat)
+        self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
+        
+        self.last_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
+        if rnn_initialization:
+            nn.init.uniform_(self.last_layer.weight, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+            nn.init.uniform_(self.last_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+
+        self.output_activation = output_activation
+        
+        self.encoder_type = 'recurrent'
+        self.device = torch.device(device)
+
+        # initialize LSTM hidden state with very large batch (50 trj; usually 20 trj)
+        self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
+        self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
+        #self.hn = torch.zeros((1, 50, self.rnn_hidden_dim)).to(self.device)
+        #self.cn = torch.zeros((1, 50, self.rnn_hidden_dim)).to(self.device)
+
+    def forward(self, input, do_reset, is_batch=False):
+        # prepare for batch update
+        if is_batch:
+            input, lengths = self.pack4rnn(input)
+        input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
+        trj, seq, fea = input.shape
+        # reset the LSTM
+        if do_reset:
+            self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
+            self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
+            #self.cn = torch.zeros(self.cn.shape).to(self.device)
+        
+        if is_batch:
+            # pass into LSTM with allowing automatic initialization for each trajectory
+            #out, (hn, cn) = self.lstm(input, (self.last_batch_hn, self.cn))
+            #self.last_batch_hn = hn # to construct a posterior for fast meta-adaptation
+            out, _ = self.lstm(input)
+            output = torch.zeros((sum(lengths), fea)).to(self.device)
+            last_length = 0
+            for i, length in enumerate(lengths):
+                output[last_length:last_length+length, :] = out[i, :length, :]
+                last_length += length
+            out = output
+        else:
+            # pass into LSTM
+            out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
+            self.hn = hn # update LSTM
+            self.cn = cn # update LSTM
             out = torch.squeeze(out) # to match the dimension
 
         # output layer for Tanh activation
