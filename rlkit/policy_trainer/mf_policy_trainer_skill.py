@@ -31,6 +31,7 @@ class MFSkillPolicyTrainer:
         batch_size: int = 256,
         num_traj: int = 0,
         eval_episodes: int = 10,
+        masking_indices:list = None,
         rendering: bool = False,
         lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
         buffer: ReplayBuffer = None,
@@ -54,6 +55,7 @@ class MFSkillPolicyTrainer:
         self._batch_size = batch_size
         self._num_traj = num_traj
         self._eval_episodes = eval_episodes
+        self.masking_indices = masking_indices
         self.lr_scheduler = lr_scheduler
 
         self.obs_dim = obs_dim
@@ -212,70 +214,74 @@ class MFSkillPolicyTrainer:
                 obs = (obs - self.buffer.obs_mean) / (self.buffer.obs_std + 1e-10)
         return obs
     
+    def mask_obs(self, obs):
+        masked_obs = np.delete(obs, self.masking_indices, axis=-1)
+        return masked_obs
+    
     def _evaluate(self, seed) -> Dict[str, List[float]]:
         self.policy.eval()
-        try:
-            s, _ = self.eval_env.reset(seed=seed)
-        except:
-            s = self.eval_env.reset(seed=seed)
-        s = self.normalize_obs(s)
-        a = np.zeros((self.action_dim, ))
-        ns = s # initialization
-        
-        mdp = (s, a, ns, np.array([0]), np.array([1]))
-        with torch.no_grad():
-            s, _, e_s, _, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=True)
-
-        eval_ep_info_buffer = []
         num_episodes = 0
-        episode_reward, episode_cost, episode_length, episode_success = 0, 0, 0, 0
-
         while num_episodes < self._eval_episodes:
-            with torch.no_grad():
-                a, _ = self.policy.select_action(e_s, deterministic=True) #(obs).reshape(1,-1)
             try:
-                ns, rew, trunc, term, infos = self.eval_env.step(a.flatten())
-                done = term or trunc
+                s, _ = self.eval_env.reset(seed=seed)
             except:
-                ns, rew, term, infos = self.eval_env.step(a.flatten())
-                done = term
-            cost = self.cost_fn(s, a, ns)
-            try:
-                success = infos['success']
-            except:
-                success = 0.0
+                s = self.eval_env.reset(seed=seed)
+            s = self.normalize_obs(s)
+            a = np.zeros((self.action_dim, ))
+            ns = s # initialization
             
-            mask = 0 if done else 1
-            
-            if self.current_epoch % self.log_interval == 0:
-                if self.rendering and num_episodes == 0:
-                    self.recorded_frames.append(self.eval_env.render())
-            
-            episode_reward += rew
-            episode_cost += cost
-            episode_success += success
-            episode_length += 1
-            
-            # state encoding
-            ns = self.normalize_obs(ns)
-
-            mdp = (s, a, ns, np.array([rew]), np.array([mask]))
+            mdp = (s, a, ns, np.array([0]), np.array([1]))
             with torch.no_grad():
-                _, ns, _, e_ns, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=False)
-            
-            s = ns
-            e_s = e_ns
+                s, _, e_s, _, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=True)
+            e_s = self.mask_obs(e_s)
 
-            if done:
-                eval_ep_info_buffer.append(
-                    {"episode_reward": episode_reward, "episode_cost": episode_cost, "episode_length": episode_length, "episode_success_rate":episode_success/episode_length}
-                )
-                num_episodes +=1
-                episode_reward, episode_cost, episode_length = 0, 0, 0
+            eval_ep_info_buffer = []            
+            episode_reward, episode_cost, episode_length, episode_success = 0, 0, 0, 0
+            
+            done = False
+            while not done:
+                with torch.no_grad():
+                    a, _ = self.policy.blind_select_action(e_s, deterministic=True) #(obs).reshape(1,-1)
                 try:
-                    s, _ = self.eval_env.reset(seed=seed)
+                    ns, rew, trunc, term, infos = self.eval_env.step(a.flatten())
+                    done = term or trunc
                 except:
-                    s = self.eval_env.reset(seed=seed)
+                    ns, rew, term, infos = self.eval_env.step(a.flatten())
+                    done = term
+                cost = self.cost_fn(s, a, ns)
+                try:
+                    success = infos['success']
+                except:
+                    success = 0.0
+                
+                mask = 0 if done else 1
+                
+                if self.current_epoch % self.log_interval == 0:
+                    if self.rendering and num_episodes == 0:
+                        self.recorded_frames.append(self.eval_env.render())
+                
+                episode_reward += rew
+                episode_cost += cost
+                episode_success += success
+                episode_length += 1
+                
+                # state encoding
+                ns = self.normalize_obs(ns)
+
+                mdp = (s, a, ns, np.array([rew]), np.array([mask]))
+                with torch.no_grad():
+                    _, ns, _, e_ns, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=False)
+                e_ns = self.mask_obs(e_ns)
+
+                s = ns
+                e_s = e_ns
+
+                if done:
+                    eval_ep_info_buffer.append(
+                        {"episode_reward": episode_reward, "episode_cost": episode_cost, "episode_length": episode_length, "episode_success_rate":episode_success/episode_length}
+                    )
+                    num_episodes +=1
+                    episode_reward, episode_cost, episode_length = 0, 0, 0
 
         if self.current_epoch % self.log_interval == 0:
             if self.rendering:

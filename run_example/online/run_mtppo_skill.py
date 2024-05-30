@@ -50,7 +50,7 @@ def get_args():
     parser.add_argument("--actor-lr", type=float, default=1e-4)
     parser.add_argument("--critic-lr", type=float, default=3e-4)
     parser.add_argument('--epoch', type=int, default=5000)
-    parser.add_argument("--step-per-epoch", type=int, default=50)
+    parser.add_argument("--step-per-epoch", type=int, default=1)
     parser.add_argument('--episode_len', type=int, default=500)
     parser.add_argument('--episode_num', type=int, default=2)
     parser.add_argument("--eval_episodes", type=int, default=3)
@@ -211,6 +211,7 @@ def train(args=get_args()):
             epoch=args.epoch,
             step_per_epoch=args.step_per_epoch,
             eval_episodes=args.eval_episodes,
+            masking_indices=added_masking_indices,
             rendering=args.rendering,
             obs_dim=args.obs_shape[0],
             action_dim=args.action_dim,

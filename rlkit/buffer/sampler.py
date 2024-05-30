@@ -209,10 +209,6 @@ class OnlineSampler:
                     ep_num += 1
                     current_step += t
                     _returns = 0
-                    try:
-                        s, _ = env.reset(seed=seed)
-                    except:
-                        s = env.reset(seed=seed)
                     break
                 
         memory = dict(
