@@ -226,26 +226,24 @@ class RecurrentOfflineEncoder(nn.Module):
         self.encoder_type = 'recurrent'
         self.device = torch.device(device)
 
-        # initialize LSTM hidden state with very large batch (50 trj; usually 20 trj)
-        #self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
-        #self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
-        self.hn = torch.zeros((1, 100, self.rnn_hidden_dim)).to(self.device)
-        self.cn = torch.zeros((1, 100, self.rnn_hidden_dim)).to(self.device)
+        # initialize LSTM hidden state with predefined trajectory
+        self.traj_num = 100
+        self.hn = torch.zeros((1, self.traj_num, self.rnn_hidden_dim)).to(self.device)
+        self.cn = torch.zeros((1, self.traj_num, self.rnn_hidden_dim)).to(self.device)
 
-    def forward(self, input, do_reset):
+    def forward(self, input):
         # prepare for batch update
         input, lengths = self.pack4rnn(input)
         input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
         trj, seq, fea = input.shape
+        assert trj == self.traj_num
 
-        # reset the LSTM
-        if do_reset:
-            #self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
-            #self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
-            self.cn = torch.zeros(self.cn.shape).to(self.device)
+        # reset the LSTM cell state
+        self.cn = torch.zeros(self.cn.shape).to(self.device)
         
         # pass into LSTM with allowing automatic initialization for each trajectory
-        out, _ = self.lstm(input)
+        out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
+        self.hn = hn # update only hn
 
         output = torch.zeros((sum(lengths), fea)).to(self.device)
         last_length = 0
