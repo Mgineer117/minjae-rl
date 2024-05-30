@@ -270,6 +270,7 @@ class PPOSkillPolicy(BasePolicy):
 
         result = {
             'loss/blind_actor_loss': loss.item(),
+            'loss/blind_critic_loss': v_loss.item(),
             'train/blind_episodic_reward': episodic_reward.item(),
             'train/blind_success': successes.mean().item()
         }

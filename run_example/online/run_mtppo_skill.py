@@ -152,6 +152,7 @@ def train(args=get_args()):
         
         supp_optimizer = torch.optim.AdamW([
                         {'params': blind_actor.parameters(), 'lr': args.actor_lr},
+                        {'params': critic.parameters(), 'lr': args.critic_lr},
                         {'params': encoder.parameters(), 'lr': args.critic_lr}
                     ])
 
