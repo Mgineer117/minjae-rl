@@ -242,10 +242,11 @@ class RecurrentOfflineEncoder(nn.Module):
         if do_reset:
             #self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
             #self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
-            #self.cn = torch.zeros(self.cn.shape).to(self.device)
+            self.cn = torch.zeros(self.cn.shape).to(self.device)
         
         # pass into LSTM with allowing automatic initialization for each trajectory
         out, _ = self.lstm(input)
+
         output = torch.zeros((sum(lengths), fea)).to(self.device)
         last_length = 0
         for i, length in enumerate(lengths):
