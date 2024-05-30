@@ -8,7 +8,6 @@ from rlkit.policy.model_free.sac import SACPolicy
 from rlkit.policy.model_free.trpo import TRPOPolicy
 from rlkit.policy.model_free.ppo import PPOPolicy
 from rlkit.policy.model_free.ppo_skill import PPOSkillPolicy
-from rlkit.policy.model_free.ppo_mse import PPOMSEPolicy
 from rlkit.policy.model_free.cpo import CPOPolicy
 from rlkit.policy.model_free.td3 import TD3Policy
 from rlkit.policy.model_free.cql import CQLPolicy
@@ -33,7 +32,6 @@ __all__ = [
     'TRPOPolicy',
     "PPOPolicy",
     "PPOSkillPolicy",
-    "PPOMSEPolicy",
     "CPOPolicy",
     "TD3Policy",
     "CQLPolicy",
