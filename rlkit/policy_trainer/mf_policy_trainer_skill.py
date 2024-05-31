@@ -302,7 +302,7 @@ class MFSkillPolicyTrainer:
         file_name = 'rendering' + str(self.current_epoch*self._step_per_epoch) +'.avi'
         output_file = os.path.join(directory, file_name)
         fourcc = cv2.VideoWriter_fourcc(*'XVID')  # Codec for AVI file
-        fps = 120
+        fps = 60
         width = 480
         height = 480
         out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))

@@ -205,7 +205,7 @@ class MFPolicyTrainer:
     def _evaluate(self, seed) -> Dict[str, List[float]]:
         self.policy.eval()
         num_episodes = 0
-        
+
         while num_episodes < self._eval_episodes:
             try:
                 s, _ = self.eval_env.reset(seed=seed)
@@ -283,7 +283,7 @@ class MFPolicyTrainer:
         file_name = 'rendering' + str(self.current_epoch*self._step_per_epoch) +'.avi'
         output_file = os.path.join(directory, file_name)
         fourcc = cv2.VideoWriter_fourcc(*'XVID')  # Codec for AVI file
-        fps = 120
+        fps = 60
         width = 480
         height = 480
         out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
