@@ -131,6 +131,7 @@ def train(args=get_args()):
             masking_indices = None
             masking_indices_length = 0
             args.embed_dim = 0
+        args.masking_indices = masking_indices
         
         # define necessary ingredients for training
         #running_state = ZFilter(args.obs_shape, clip=5)
