@@ -3,48 +3,6 @@ import gym
 import metaworld
 import random
 
-from gym.envs.mujoco.hopper_v4 import HopperEnv
-from gym.envs.mujoco.ant_v4 import AntEnv
-from gym.envs.mujoco.half_cheetah_v4 import HalfCheetahEnv
-from gym.envs.mujoco.swimmer_v4 import SwimmerEnv
-from gym.envs.mujoco.humanoid_v4 import HumanoidEnv
-from gym.envs.mujoco.humanoidstandup_v4 import HumanoidStandupEnv
-from gym.envs.mujoco.walker2d_v4 import Walker2dEnv
-from gym.envs.mujoco.inverted_double_pendulum_v4 import InvertedDoublePendulumEnv
-from gym.envs.mujoco.inverted_pendulum_v4 import InvertedPendulumEnv
-from gym.envs.mujoco.reacher_v4 import ReacherEnv
-
-ENVS = {
-    #["ML1", "MT1", "ML10", "MT10", "ML45", "MT50"]
-    #'ML1-pick-place-v2': metaworld.ML1('pick-place-v2'),
-    #'MT1-pick-place-v2': metaworld.MT1('pick-place-v2'),
-    #'ML1-push-v2': metaworld.ML1('push-v2'),
-    #'MT1-push-v2': metaworld.MT1('push-v2'),
-
-    #'ML1-reach-v2': metaworld.ML1('reach-v2'),
-    #'MT1-reach-v2': metaworld.MT1('reach-v2'),
-    #'ML1-sweep-into-v2': metaworld.ML1('sweep-into-v2'),
-    #'MT1-sweep-into-v2': metaworld.MT1('sweep-into-v2'),
-    #'ML1-window-open-v2': metaworld.ML1('window-open-v2'),
-    #'MT1-window-open-v2': metaworld.MT1('window-open-v2'),
-
-    #'ML1-basketball-v2': metaworld.ML1('basketball-v2'),
-    #'MT1-basketball-v2': metaworld.MT1('basketball-v2'),
-    #'ML1-button-press-v2': metaworld.ML1('button-press-v2'),
-    #'MT1-button-press-v2': metaworld.MT1('button-press-v2'),
-    #'ML1-dial-turn-v2': metaworld.ML1('dial-turn-v2'),
-    #'MT1-dial-turn-v2': metaworld.MT1('dial-turn-v2'),
-    #'ML1-drawer-close-v2': metaworld.ML1('drawer-close-v2'),
-    #'MT1-drawer-close-v2': metaworld.MT1('drawer-close-v2'),
-    #'ML1-peg-insert-side-v2': metaworld.ML1('peg-insert-side-v2'),
-    #'MT1-peg-insert-side-v2': metaworld.MT1('peg-insert-side-v2'),
-    #####################################################################
-    #'ML10': metaworld.ML10(),
-    #'MT10': metaworld.MT10(),
-    #'ML45': metaworld.ML45(),
-    #'MT50': metaworld.MT50(),
-}
-
 def load_gym_env(key, reward_fn=None, cost_fn=None, render_mode: str = 'rgb_array'):
     """
     Returns datasets formatted for use by standard Q-learning algorithms,
@@ -306,10 +264,9 @@ def load_gym_env(key, reward_fn=None, cost_fn=None, render_mode: str = 'rgb_arra
 
 def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: str = 'rgb_array'):
     if task is not None:
-        key = '-'.join((key, task))
         task_name = '-'.join((task, 'v2'))
 
-    if key == 'MetaGym-ML1-pick-place':
+    if key == 'MetaGym-ML1':
         assert task is not None
         assert task_num is not None
         ml = metaworld.ML1(task_name)
@@ -329,69 +286,7 @@ def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: s
             testing_envs.append(env)
         eval_env_idx = random.choice(range(len(testing_envs)))
         testing_envs = testing_envs[eval_env_idx]
-    elif key == 'MetaGym-MT1-pick-place':
-        assert task is not None
-        assert task_num is not None
-        ml = metaworld.MT1(task_name)
-        tasks = random.sample(ml.train_tasks, task_num)
-        training_envs = []
-        for task in tasks:
-            env = ml.train_classes[task_name](render_mode=render_mode)  # Create an environment with task `pick_place`
-            env.set_task(task)
-            training_envs.append(env)
-        eval_env_idx = random.choice(range(len(training_envs)))
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'MetaGym-ML1-door-open':
-        assert task is not None
-        assert task_num is not None
-        ml = metaworld.ML1(task_name)
-        training_envs = []
-        for name, env_cls in ml.train_classes.items():
-            env = env_cls(render_mode=render_mode)
-            task = random.choice([task for task in ml.train_tasks
-                                    if task.env_name == name])
-            env.set_task(task)
-            training_envs.append(env)
-        testing_envs = []
-        for name, env_cls in ml.test_classes.items():
-            env = env_cls(render_mode=render_mode)
-            task = random.choice([task for task in ml.test_tasks
-                                    if task.env_name == name])
-            env.set_task(task)
-            testing_envs.append(env)
-        eval_env_idx = random.choice(range(len(testing_envs)))
-    elif key == 'MetaGym-MT1-door-open':
-        assert task is not None
-        assert task_num is not None
-        ml = metaworld.MT1(task_name)
-        tasks = random.sample(ml.train_tasks, task_num)
-        training_envs = []
-        for task in tasks:
-            env = ml.train_classes[task_name](render_mode=render_mode)  # Create an environment with task `pick_place`
-            env.set_task(task)
-            training_envs.append(env)
-        eval_env_idx = random.choice(range(len(training_envs)))
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'MetaGym-ML1-lever-pull':
-        assert task is not None
-        assert task_num is not None
-        ml = metaworld.ML1(task_name)
-        training_envs = []
-        for name, env_cls in ml.train_classes.items():
-            env = env_cls(render_mode=render_mode)
-            task = random.choice([task for task in ml.train_tasks
-                                    if task.env_name == name])
-            env.set_task(task)
-            training_envs.append(env)
-        testing_envs = []
-        for name, env_cls in ml.test_classes.items():
-            env = env_cls(render_mode=render_mode)
-            task = random.choice([task for task in ml.test_tasks
-                                    if task.env_name == name])
-            env.set_task(task)
-            testing_envs.append(env)
-        eval_env_idx = random.choice(range(len(testing_envs)))
-    elif key == 'MetaGym-MT1-lever-pull':
+    elif key == 'MetaGym-MT1':
         assert task is not None
         assert task_num is not None
         ml = metaworld.MT1(task_name)
@@ -404,9 +299,8 @@ def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: s
         eval_env_idx = random.choice(range(len(training_envs)))
         testing_envs = training_envs[eval_env_idx]
     elif key == 'MetaGym-ML10':
-        if task_num is not None:
-            print('Warning: task_num is given')
         ml = metaworld.ML10()
+        training_envs = []
         for name, env_cls in ml.train_classes.items():
             env = env_cls(render_mode=render_mode)
             task = random.choice([task for task in ml.train_tasks
@@ -423,8 +317,6 @@ def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: s
         eval_env_idx = random.choice(range(len(testing_envs)))
         testing_envs = testing_envs[eval_env_idx]
     elif key == 'MetaGym-MT10':
-        if task_num is not None:
-            print('Warning: task_num is given')
         ml = metaworld.MT10()
         training_envs = []
         for name, env_cls in ml.train_classes.items():
