@@ -44,11 +44,11 @@ def get_args():
     '''Algorithmic parameters'''
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
     parser.add_argument('--num-cores', type=int, default=None)
-    parser.add_argument('--actor-hidden-dims', default=(16, 8))
+    parser.add_argument('--actor-hidden-dims', default=(64, 32))
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--critic-lr", type=float, default=3e-4)
     parser.add_argument("--local-steps", type=int, default=3)
-    parser.add_argument("--embed-type", type=str, default='none') # skill, task, or none
+    parser.add_argument("--embed-type", type=str, default='skill') # skill, task, or none
     parser.add_argument("--embed-dim", type=int, default=5)
 
     '''Sampling parameters'''
@@ -123,7 +123,7 @@ def train(args=get_args()):
                 device = args.device
             )
             optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
-            masking_indices = [0, 1, 2, 3, 4, 5, 6]
+            masking_indices = [0, 2, 3, 4, 7, 8, 9, 10] #[0, 5, 6, 7, 8, 9, 10] #[0, 1, 2, 3, 4, 5, 6]
             masking_indices_length = len(masking_indices)
         elif args.embed_type == 'task':
             rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)

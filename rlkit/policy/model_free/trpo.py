@@ -257,6 +257,6 @@ class TRPOPolicy(BasePolicy):
             path = os.path.join(logdir, "best_model.p")
         else:
             path = os.path.join(logdir, "model_" + str(epoch) + ".p")
-        pickle.dump((self.actor, self.critic), open(path, 'wb'))
+        pickle.dump((self.actor, self.critic, self.encoder), open(path, 'wb'))
         if running_state is not None:
-            pickle.dump((self.actor, self.critic, running_state), open(path, 'wb'))
+            pickle.dump((self.actor, self.critic, self.encoder, running_state), open(path, 'wb'))

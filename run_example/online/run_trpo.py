@@ -161,9 +161,9 @@ def train(args=get_args()):
         # import pre-trained model before defining actual models
         if args.import_policy:
             try:
-                actor, critic, running_state = pickle.load(open('model/model.p', "rb"))
+                actor, critic, encoder, running_state = pickle.load(open('model/model.p', "rb"))
             except:
-                actor, critic = pickle.load(open('model/model.p', "rb"))
+                actor, critic, encoder = pickle.load(open('model/model.p', "rb"))
         
         # define training components
         sampler = OnlineSampler(
