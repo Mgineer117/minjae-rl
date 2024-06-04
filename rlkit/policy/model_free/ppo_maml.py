@@ -3,30 +3,29 @@ import pickle
 import os
 import torch
 import torch.nn as nn
-from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 import math
 import time
+from copy import deepcopy
 
 from typing import Dict, Union, Tuple
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
-from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to, estimate_episodic_value
+from rlkit.utils.utils  import estimate_advantages, estimate_episodic_value, get_flat_params_from
 
-class PPOSkillPolicy(BasePolicy):
+class PPOMAMLPolicy(BasePolicy):
     def __init__(
             self, 
             actor: nn.Module, 
-            blind_actor: nn.Module, 
             critic: nn.Module,  
-            encoder: BaseEncoder,
-            main_optimizer: torch.optim.Optimizer,
-            supp_optimizer: torch.optim.Optimizer,
-            masking_indices = None,
+            optimizer: torch.optim.Optimizer,
+            encoder: BaseEncoder = BaseEncoder(),
             tau: float = 0.95,
             gamma: float = 0.99,
             K_epochs: int = 3,
             eps_clip: float = 0.2,
             l2_reg: float = 1e-4,
+            actor_lr: float = 1e-4,
+            critic_lr: float = 3e-4,
             device = None
             ):
         super().__init__()
@@ -34,9 +33,7 @@ class PPOSkillPolicy(BasePolicy):
         self.actor = actor
         self.critic = critic
         self.encoder = encoder
-        self.main_optimizer = main_optimizer
-        self.supp_optimizer = supp_optimizer
-        self.masking_indices = masking_indices
+        self.optimizer = optimizer            
 
         self.loss_fn = torch.nn.MSELoss()
 
@@ -46,20 +43,28 @@ class PPOSkillPolicy(BasePolicy):
         self._eps_clip = eps_clip
         self._l2_reg = l2_reg
 
+        self._actor_lr = actor_lr
+        self._critic_lr = critic_lr
+
         self.param_size = sum(p.numel() for p in self.actor.parameters())
         self.device = device
     
+    def initialize_optimizer(self):
+        # re-initialize the optimizer's referencing parameters
+        # since deepcopy method does not copy its parameter reference
+        # i.e., deepcopy copies everything but optimizer's parameter referencing
+        self.optimizer = torch.optim.Adam([
+                        {'params': self.actor.parameters(), 'lr': self._actor_lr},
+                        {'params': self.critic.parameters(), 'lr': self._critic_lr}
+                    ])
+
     def train(self) -> None:
         self.actor.train()
         self.critic.train()
-        self.blind_actor.train()
-        self.encoder.train()
 
     def eval(self) -> None:
         self.actor.eval()
         self.critic.eval()
-        self.blind_actor.eval()
-        self.encoder.eval()
 
     def actforward(
         self,
@@ -81,28 +86,6 @@ class PPOSkillPolicy(BasePolicy):
     ) -> np.ndarray:
         with torch.no_grad():
             action, logprob = self.actforward(obs, deterministic)
-        return action.cpu().numpy(), logprob.cpu().numpy()
-    
-    def blind_actforward(
-        self,
-        obs: torch.Tensor,
-        deterministic: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        dist = self.blind_actor(obs)
-        if deterministic:
-            action = dist.mode()
-        else:
-            action = dist.rsample()
-        logprob = dist.log_prob(action)
-        return action, logprob
-
-    def blind_select_action(
-        self,
-        obs: np.ndarray,
-        deterministic: bool = False
-    ) -> np.ndarray:
-        with torch.no_grad():
-            action, logprob = self.blind_actforward(obs, deterministic)
         return action.cpu().numpy(), logprob.cpu().numpy()
     
     def encode_obs(self, mdp_tuple, env_idx = None, reset=False):
@@ -148,33 +131,34 @@ class PPOSkillPolicy(BasePolicy):
                 mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
                 embedding = self.encoder(mdp, do_reset=reset, is_batch=is_batch)
                 embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
-                masked_embedding = torch.concatenate((embedding[:-1], self.mask_obs(obs, self.masking_indices, dim=-1)), axis=-1)
                 embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
-                return obs, next_obs, embedded_obs, embedded_next_obs, masked_embedding
+                return obs, next_obs, embedded_obs, embedded_next_obs
             else:
                 mdp = torch.concatenate((obs, actions, next_obs, rewards), axis=-1)
                 mdp = mdp[None, None, :]
                 embedding = self.encoder(mdp, do_reset=reset)
                 embedded_next_obs = torch.concatenate((embedding, next_obs), axis=-1)
                 embedded_obs = embedded_next_obs
-                return obs, next_obs, embedded_obs, embedded_next_obs, embedding
+                return obs, next_obs, embedded_obs, embedded_next_obs
         else:
             NotImplementedError
-    
-    def policy_learn(self, batch):
+
+    def learn(self, batch, compute_param_grad=True):
+        self.initialize_optimizer()
+
         obss = torch.from_numpy(batch['observations']).to(self.device)
         actions = torch.from_numpy(batch['actions']).to(self.device)
         next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
         rewards = torch.from_numpy(batch['rewards']).to(self.device)
         masks = torch.from_numpy(batch['masks']).to(self.device)
-        logprobs = torch.from_numpy(batch['logprobs']).to(self.device)
         env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
+        logprobs = torch.from_numpy(batch['logprobs']).to(self.device)
         successes = torch.from_numpy(batch['successes']).to(self.device)
         
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
-
+        
         with torch.no_grad():
-            _, _, embedded_obss, _, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
+            _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
             values = self.critic(embedded_obss)
 
         """get advantage estimation from the trajectories"""
@@ -182,14 +166,16 @@ class PPOSkillPolicy(BasePolicy):
         episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
         advantages = torch.squeeze(advantages)
 
+        # because of K updates, gradients need to be accumulated
+        second_loss_grads = torch.ones(self.param_size)
+
         '''Update the parameters'''
-        for _ in range(self._K_epochs):
-            with torch.no_grad():
-                _, _, embedded_obss, _, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
+        for k in range(self._K_epochs):    
+            _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
             embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
 
             '''get policy output'''
-            dist = self.actor(embedded_obss)
+            dist = self.actor(embedded_obss.detach()) # detaching the gradient to focus encoder learning with critic reward maximization
             new_logprobs = dist.log_prob(actions)
             dist_entropy = dist.entropy()
             
@@ -198,16 +184,39 @@ class PPOSkillPolicy(BasePolicy):
             v_loss = self.loss_fn(r_pred, returns)
 
             '''get policy loss'''
-            ratios = torch.exp(new_logprobs - logprobs.detach())
+            ratios = torch.exp(new_logprobs - logprobs)
 
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1-self._eps_clip, 1+self._eps_clip) * advantages
-
+    
             loss = torch.mean(-torch.min(surr1, surr2) + 0.5 * v_loss - 0.01 * dist_entropy)
+            
+            '''Update agents'''
+            self.optimizer.zero_grad()
 
-            self.main_optimizer.zero_grad()
-            loss.backward()
-            self.main_optimizer.step()
+            loss_grads = torch.autograd.grad(loss, self.actor.parameters(), retain_graph=True, create_graph=True)
+            loss_critic_grads = torch.autograd.grad(loss, self.critic.parameters())
+
+            for grad, param in zip(loss_grads, self.actor.parameters()):
+                param.grad = grad
+            for grad, param in zip(loss_critic_grads, self.critic.parameters()):
+                param.grad = grad
+            
+            loss_grads = torch.cat([grad.view(-1) for grad in loss_grads])
+            #print(loss_grads)
+
+            if compute_param_grad or not k == (self._K_epochs - 1):    
+                for i in range(self.param_size):
+                    grads = torch.autograd.grad(loss_grads[i], self.actor.parameters(), retain_graph=True) 
+                    second_loss_grads[i] *= torch.cat([grad.view(-1) for grad in grads])[i] # collect diagonal element of Hessian
+                
+                second_loss_grads = second_loss_grads.detach()
+            
+            loss_grads = loss_grads.detach() * second_loss_grads
+
+            self.optimizer.step()
+            #selected_params_after = self.actor.state_dict()['dist_net.mu.weight'].clone()
+            #print(selected_params_after - selected_params_before)
 
         result = {
             'loss/critic_loss': v_loss.item(),
@@ -216,80 +225,46 @@ class PPOSkillPolicy(BasePolicy):
             'train/success': successes.mean().item()
         }
         
-        return result 
+        actor_param = get_flat_params_from(self.actor).detach()
+        critic_param = get_flat_params_from(self.critic).detach()
+        if self.encoder.encoder_type =='recurrent':
+            encoder_param = get_flat_params_from(self.encoder).detach()
+        else:
+            encoder_param = None
+
+
+        return result, (loss_grads, second_loss_grads), (actor_param, critic_param, encoder_param)
+
+    def learn_with_grad(self, memory, grad):
+        self.initialize_optimizer()
+        self.optimizer.zero_grad()
+        
+        # prepare the actor parameter's grad in array
+        offset = 0
+        for param in self.actor.parameters():
+            num_elements = param.numel()
+            param_grad = grad[offset:offset+num_elements].view(param.shape)
+            param.grad = param_grad
+            offset += num_elements
+        
+        # prepare the critic parameter's grad ready
+        mdp_tuple = (memory['observations'], memory['actions'], memory['next_observations'], memory['rewards'], memory['masks'])
+        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=memory['env_idxs'], reset=True)
+
+        values = self.critic(embedded_obss)
+        _, returns = estimate_advantages(memory['rewards'], memory['masks'], values.detach(), self._gamma, self._tau, self.device)
+        
+        v_loss = self.loss_fn(values, returns)
+        v_loss.backward()
+
+        self.optimizer.step()
     
-    def blind_policy_learn(self, batch):
-        obss = torch.from_numpy(batch['observations']).to(self.device)
-        actions = torch.from_numpy(batch['actions']).to(self.device)
-        next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
-        rewards = torch.from_numpy(batch['rewards']).to(self.device)
-        masks = torch.from_numpy(batch['masks']).to(self.device)
-        logprobs = torch.from_numpy(batch['logprobs']).to(self.device)
-        env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
-        successes = torch.from_numpy(batch['successes']).to(self.device)
-        
-        mdp_tuple = (obss, actions, next_obss, rewards, masks)
-
-        with torch.no_grad():
-            _, _, embedded_obss, _, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
-            values = self.critic(embedded_obss)
-
-        """get advantage estimation from the trajectories"""
-        advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
-        episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
-        advantages = torch.squeeze(advantages)
-
-        '''Update the parameters'''
-        for _ in range(self._K_epochs):
-            _, _, embedded_obss, _, masked_embedding = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
-            embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
-            masked_embedding = torch.as_tensor(masked_embedding, device=self.device, dtype=torch.float32)
-
-            '''get policy output'''
-            dist = self.blind_actor(masked_embedding)
-            new_logprobs = dist.log_prob(actions)
-            dist_entropy = dist.entropy()
-            
-            '''get value loss'''
-            r_pred = self.critic(embedded_obss)
-            v_loss = self.loss_fn(r_pred, returns)
-
-            '''get policy loss'''
-            ratios = torch.exp(new_logprobs - logprobs.detach())
-
-            surr1 = ratios * advantages
-            surr2 = torch.clamp(ratios, 1-self._eps_clip, 1+self._eps_clip) * advantages
-
-            loss = torch.mean(-torch.min(surr1, surr2) + 0.5 * v_loss - 0.01 * dist_entropy)
-
-            '''Update agents'''
-            self.supp_optimizer.zero_grad()
-            loss.backward()
-            self.supp_optimizer.step()
-
-        result = {
-            'loss/blind_actor_loss': loss.item(),
-            'loss/blind_critic_loss': v_loss.item(),
-            'train/blind_episodic_reward': episodic_reward.item(),
-            'train/blind_success': successes.mean().item()
-        }
-        
-        return result 
-
-
-    def mask_obs(self, obs: torch.Tensor, ind: list, dim: int) -> torch.Tensor:
-        obs = obs.cpu().numpy()
-        obs = np.delete(obs, ind, axis=dim)
-        obs = torch.from_numpy(obs).to(self.device)
-
-        return obs
-
     def save_model(self, logdir, epoch, running_state=None, is_best=False):
         # save checkpoint
         if is_best:
             path = os.path.join(logdir, "best_model.p")
         else:
             path = os.path.join(logdir, "model_" + str(epoch) + ".p")
-        pickle.dump((self.actor, self.blind_actor, self.critic, self.encoder), open(path, 'wb'))
+        pickle.dump((self.actor, self.critic), open(path, 'wb'))
         if running_state is not None:
-            pickle.dump((self.actor, self.blind_actor, self.critic, self.encoder, running_state), open(path, 'wb'))
+            pickle.dump((self.actor, self.critic, running_state), open(path, 'wb'))

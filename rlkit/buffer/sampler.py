@@ -50,7 +50,6 @@ class OnlineSampler:
         episode_len: int,
         episode_num: int,
         training_envs: list,
-        cost_fn,
         running_state = None,
         num_cores: int = None,
         data_num: int = None,
@@ -64,7 +63,6 @@ class OnlineSampler:
         self.training_envs = training_envs
         self.running_state = running_state
         self.data_num = data_num
-        self.cost_fn = cost_fn
 
         self.device = torch.device(device)
 
@@ -122,7 +120,7 @@ class OnlineSampler:
             successes = np.zeros((batch_size, 1)),
         )
         return data
-
+    
     def collect_trajectory(self, pid, queue, env, policy, thread_batch_size, episode_len,
                            episode_num, deterministic=False, env_idx=0, seed=0):
         # estimate the batch size to hava a large batch
@@ -164,17 +162,16 @@ class OnlineSampler:
                 # sample action
                 with torch.no_grad():
                     a, logprob = policy.select_action(e_s, deterministic=deterministic)
+                    
                 # env stepping
                 try:
-                    ns, rew, term, trunc, infos = env.step(a)
+                    ns, rew, term, trunc, infos = env.step(a); cost = 0.0
                 except:
-                    ns, rew, term, infos = env.step(a)                    
+                    ns, rew, term, infos = env.step(a); cost = 0.0              
                     trunc = True if t == episode_len else False
-                try:
-                    success = infos['success']
-                except:
-                    success = 0.0 
-                cost = self.cost_fn(s, a, ns)
+                
+                success = infos['success']
+            
                 done = trunc or term
                 mask = 0 if done else 1
                 
@@ -220,11 +217,9 @@ class OnlineSampler:
             terminals=data['terminals'].astype(np.int32),
             timeouts=data['timeouts'].astype(np.int32),
             masks=data['masks'].astype(np.int32),
-            #dones=data['dones'].astype(np.int32),
             logprobs=data['logprobs'].astype(np.float32),
             env_idxs=data['env_idxs'].astype(np.int32),
             successes=data['successes'].astype(np.float32),
-            #avg_ep_return=np.sum(data['rewards'])/len(np.where(data['dones']==1)[0])
         )
         if current_step < thread_batch_size:
             for k in memory:
@@ -232,7 +227,6 @@ class OnlineSampler:
         else:
             for k in memory:
                 memory[k] = memory[k][:thread_batch_size]
-
         if queue is not None:
             queue.put([pid, memory])
         else:
@@ -245,7 +239,7 @@ class OnlineSampler:
         policy.encoder.device = device
         return policy
 
-    def collect_samples(self, policy, seed, deterministic=False):
+    def collect_samples(self, policy, seed, deterministic=False, pid=None, local_queue=None):
         '''
         All sampling and saving to the memory is done in numpy.
         return: dict() with elements in numpy
@@ -284,6 +278,7 @@ class OnlineSampler:
         for _ in range(worker_idx - 1): 
             pid, worker_memory = queue.get()
             worker_memories[pid] = worker_memory
+
         for worker_memory in worker_memories:
             for k in memory:
                 memory[k] = np.concatenate((memory[k], worker_memory[k]), axis=0)
@@ -299,4 +294,7 @@ class OnlineSampler:
         policy = self.to_device(policy, self.device)
         t_end = time.time()
 
-        return memory, t_end - t_start
+        if local_queue is not None:
+            return local_queue.put([pid, memory, t_end - t_start])
+        else:
+            return memory, t_end - t_start

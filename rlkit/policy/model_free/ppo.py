@@ -17,8 +17,9 @@ class PPOPolicy(BasePolicy):
             self, 
             actor: nn.Module, 
             critic: nn.Module,  
+            encoder: BaseEncoder,
             optimizer: torch.optim.Optimizer,
-            encoder: BaseEncoder = BaseEncoder(),
+            masking_indices: list = None,
             tau: float = 0.95,
             gamma: float = 0.99,
             K_epochs: int = 3,
@@ -35,6 +36,8 @@ class PPOPolicy(BasePolicy):
 
         self.loss_fn = torch.nn.MSELoss()
 
+        self.masking_indices = masking_indices
+
         self._gamma = gamma
         self._tau = tau
         self._K_epochs = K_epochs
@@ -46,10 +49,14 @@ class PPOPolicy(BasePolicy):
     
     def train(self) -> None:
         self.actor.train()
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder.train()
         self.critic.train()
 
     def eval(self) -> None:
         self.actor.eval()
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder.eval()
         self.critic.eval()
 
     def actforward(
@@ -76,16 +83,13 @@ class PPOPolicy(BasePolicy):
     
     def encode_obs(self, mdp_tuple, env_idx = None, reset=False):
         '''
-        Given mdp = (s, a, s', r, mask)
-        return embedding, embedded_next_obs = embedding is attached to the next_ob
+        Input: mdp = (s, a, s', r, mask)
+        Return: s, s', (s + embedding), (s' + embeding)
           since it should include the information of reward and transition dynamics
-        It should handle both tensor and numpy since some do not have network embedding but some do.
-        All encoders take input in tensors
-        Hence, we transform to tensor for all cases but return as tensor if is_batch else as numpy
         '''
         obs, actions, next_obs, rewards, masks = mdp_tuple
         # check dimension
-        is_batch = True if len(obs.shape) > 1 else False
+        is_batch = len(obs.shape) > 1
 
         # transform to tensor
         obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
@@ -96,16 +100,12 @@ class PPOPolicy(BasePolicy):
 
         if self.encoder.encoder_type == 'none':
             # skip embedding
-            embedding = None
-            embedded_obs = obs
-            embedded_next_obs = next_obs
-            return obs, next_obs, embedded_obs, embedded_next_obs
+            embedding, embedded_obs, embedded_next_obs = None, obs, next_obs
         elif self.encoder.encoder_type == 'onehot':
             obs_embedding = self.encoder(obs, env_idx)
             next_obs_embedding = self.encoder(next_obs, env_idx)
             embedded_obs = torch.concatenate((obs_embedding, obs), axis=-1) 
             embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
-            return obs, next_obs, embedded_obs, embedded_next_obs
         elif self.encoder.encoder_type == 'recurrent':
             if is_batch:
                 t_obs = torch.concatenate((obs[0][None, :], obs), axis=0)
@@ -116,18 +116,18 @@ class PPOPolicy(BasePolicy):
 
                 mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
                 embedding = self.encoder(mdp, do_reset=reset, is_batch=is_batch)
-                embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
-                embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
-                return obs, next_obs, embedded_obs, embedded_next_obs
+                
+                embedded_obs = torch.concatenate((embedding[:-1], self.mask_obs(obs, self.masking_indices, dim=-1)), axis=-1)
+                embedded_next_obs = torch.concatenate((embedding[1:], self.mask_obs(next_obs, self.masking_indices, dim=-1)), axis=-1)
             else:
                 mdp = torch.concatenate((obs, actions, next_obs, rewards), axis=-1)
                 mdp = mdp[None, None, :]
                 embedding = self.encoder(mdp, do_reset=reset)
-                embedded_next_obs = torch.concatenate((embedding, next_obs), axis=-1)
-                embedded_obs = embedded_next_obs
-                return obs, next_obs, embedded_obs, embedded_next_obs
+                embedded_next_obs = torch.concatenate((embedding, self.mask_obs(next_obs, self.masking_indices, dim=-1)), axis=-1)
+                embedded_obs = embedded_next_obs # we are not using this            
         else:
             NotImplementedError
+        return obs, next_obs, embedded_obs, embedded_next_obs
     
     def learn(self, batch):
         obss = torch.from_numpy(batch['observations']).to(self.device)
@@ -185,6 +185,13 @@ class PPOPolicy(BasePolicy):
         }
         
         return result 
+    
+    def mask_obs(self, obs: torch.Tensor, ind: list, dim: int) -> torch.Tensor:
+        obs = obs.cpu().numpy()
+        if ind is not None:
+            obs = np.delete(obs, ind, axis=dim)
+        obs = torch.from_numpy(obs).to(self.device)
+        return obs
     
     def save_model(self, logdir, epoch, running_state=None, is_best=False):
         # save checkpoint

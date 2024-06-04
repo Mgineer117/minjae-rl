@@ -3,6 +3,17 @@ import gym
 import metaworld
 import random
 
+from gym.envs.mujoco.hopper_v4 import HopperEnv
+from gym.envs.mujoco.ant_v4 import AntEnv
+from gym.envs.mujoco.half_cheetah_v4 import HalfCheetahEnv
+from gym.envs.mujoco.swimmer_v4 import SwimmerEnv
+from gym.envs.mujoco.humanoid_v4 import HumanoidEnv
+from gym.envs.mujoco.humanoidstandup_v4 import HumanoidStandupEnv
+from gym.envs.mujoco.walker2d_v4 import Walker2dEnv
+from gym.envs.mujoco.inverted_double_pendulum_v4 import InvertedDoublePendulumEnv
+from gym.envs.mujoco.inverted_pendulum_v4 import InvertedPendulumEnv
+from gym.envs.mujoco.reacher_v4 import ReacherEnv
+
 ENVS = {
     #["ML1", "MT1", "ML10", "MT10", "ML45", "MT50"]
     #'ML1-pick-place-v2': metaworld.ML1('pick-place-v2'),
@@ -34,7 +45,7 @@ ENVS = {
     #'MT50': metaworld.MT50(),
 }
 
-def load_env(key, task: str = None, task_num: int = None, render_mode: str = 'rgb_array'):
+def load_gym_env(key, reward_fn=None, cost_fn=None, render_mode: str = 'rgb_array'):
     """
     Returns datasets formatted for use by standard Q-learning algorithms,
     with observations, actions, next_observations, rewards, and a terminal
@@ -64,52 +75,241 @@ def load_env(key, task: str = None, task_num: int = None, render_mode: str = 'rg
     Format: [MetaGym or Gym]-[Agent(MT1 or hopper)]
     optional(task) as an input
     '''
+    if key == 'Gym-Ant':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('Ant-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+                
+                if self.custom_reward_fn is not None:
+                    penalties = self.control_cost(action)
+                    if self._use_contact_forces:
+                        penalties += self.contact_cost
+                    reward = self.custom_reward_fn(info['x_velocity'], self.healthy_reward)
+                    reward -= penalties
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+                
+                return observation, reward, terminated, truncated, info       
+    elif key == 'Gym-HalfCheetah':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('HalfCheetah-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+
+                if self.custom_reward_fn is not None:
+                    penalties = self.control_cost(action)
+                    forward_reward_weight = 1.0
+                    reward =  self.custom_reward_fn(info['x_velocity'], forward_reward_weight)
+                    reward -= penalties
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+
+                if self.render_mode == "human":
+                    self.render()
+                return observation, reward, terminated, truncated, info         
+    elif key == 'Gym-Hopper':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('Hopper-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+
+                if self.custom_reward_fn is not None:
+                    penalties = self.control_cost(action)
+                    forward_reward_weight = 1.0
+                    reward = self.custom_reward_fn(info['x_velocity'], forward_reward_weight, self.healthy_reward)
+                    reward -= penalties
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+
+                return observation, reward, terminated, truncated, info
+    elif key == 'Gym-Humanoid-Standup':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('HumanoidStandup-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+
+                if self.custom_reward_fn is not None:
+                    reward =  self.custom_reward_fn(info['reward_linup'], info['reward_quadctrl'], info['reward_impact'])
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+
+                return observation, reward, terminated, truncated, info          
+    elif key == 'Gym-Humanoid':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('Humanoid-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+            
+            def mass_center(self, model, data):
+                mass = np.expand_dims(model.body_mass, axis=1)
+                xpos = data.xipos
+                return (np.sum(mass * xpos, axis=0) / np.sum(mass))[0:2].copy()
+            
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+
+                if self.custom_reward_fn is not None:
+                    penalties = self.control_cost(action)
+                    forward_reward_weight = 1.25
+                    reward =  self.custom_reward_fn(info['x_velocity'], forward_reward_weight, self.healthy_reward)
+                    reward -= penalties
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+
+                return observation, reward, terminated, truncated, info         
+    elif key == 'Gym-InvertedDoublePendulum':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('InvertedDoublePendulum-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+
+                if self.custom_reward_fn is not None:
+                    reward =  self.custom_reward_fn(observation, reward)
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+
+                return observation, reward, terminated, truncated, info          
+    elif key == 'Gym-InvertedPendulum':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('InvertedPendulum-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+
+                if self.custom_reward_fn is not None:
+                    reward =  self.custom_reward_fn(observation, reward)
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+
+                return observation, reward, terminated, truncated, info    
+    elif key == 'Gym-Reacher':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('Reacher-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+
+                if self.custom_reward_fn is not None:
+                    reward =  self.custom_reward_fn(info['reward_dist'], info['reward_ctrl'])
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+
+                return observation, reward, terminated, truncated, info
+    elif key == 'Gym-Swimmer':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('Swimmer-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+
+                if self.custom_reward_fn is not None:
+                    penalties = self.control_cost(action)
+                    forward_reward_weight = 1.0
+                    reward =  self.custom_reward_fn(info['x_velocity'], forward_reward_weight)
+                    reward -= penalties
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+
+                return observation, reward, terminated, truncated, info
+    elif key == 'Gym-Walker':
+        class Env(gym.Wrapper):
+            def __init__(self, reward_fn=None, cost_fn=None, render_mode='rgb_array'):
+                env = gym.make('Walker2d-v4', render_mode=render_mode)
+                super().__init__(env)
+                self.custom_reward_fn = reward_fn
+                self.custom_cost_fn = cost_fn
+
+            def step(self, action):
+                observation, reward, terminated, truncated, info = self.env.step(action)
+
+                if self.custom_reward_fn is not None:
+                    penalties = self.control_cost(action)
+                    forward_reward_weight = 1.0
+                    reward =  self.custom_reward_fn(info['x_velocity'], forward_reward_weight, self.healthy_reward)
+                    reward -= penalties
+                cost = self.custom_cost_fn(observation, action) if self.custom_cost_fn is not None else 0.0
+
+                info["cost"] = cost
+                info["success"] = 0.0
+
+                return observation, reward, terminated, truncated, info
+
+    if isinstance(reward_fn, list):
+        envs = []
+        for rew_fn in reward_fn:
+            envs.append(Env(rew_fn, cost_fn, render_mode)) 
+        training_envs = envs[:-1]
+        testing_envs = envs[-1]
+    else:
+        training_envs = [Env(reward_fn, cost_fn, render_mode)]
+        testing_envs = training_envs[0]
+    
+    return training_envs, testing_envs, None
+
+def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: str = 'rgb_array'):
     if task is not None:
         key = '-'.join((key, task))
         task_name = '-'.join((task, 'v2'))
 
-    if key == 'Gym-Ant':
-        training_envs = [gym.make('Ant-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'Gym-HalfCheetah':
-        training_envs = [gym.make('HalfCheetah-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'Gym-Hopper':
-        training_envs = [gym.make('Hopper-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'Gym-Humanoid-Standup':
-        training_envs = [gym.make('HumanoidStandup-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'Gym-Humanoid':
-        training_envs = [gym.make('Humanoid-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'Gym-InvertedDoublePendulum':
-        training_envs = [gym.make('InvertedDoublePendulum-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'Gym-InvertedPendulum':
-        training_envs = [gym.make('InvertedPendulum-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'Gym-Reacher':
-        training_envs = [gym.make('Reacher-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'Gym-Swimmer':
-        training_envs = [gym.make('Swimmer-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-    elif key == 'Gym-Walker':
-        training_envs = [gym.make('Walker-v4', render_mode=render_mode)]
-        eval_env_idx = 0
-        testing_envs = training_envs[eval_env_idx]
-
-    elif key == 'MetaGym-ML1-pick-place':
+    if key == 'MetaGym-ML1-pick-place':
         assert task is not None
         assert task_num is not None
         ml = metaworld.ML1(task_name)

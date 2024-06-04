@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import gym
 import wandb
+from copy import deepcopy
 
 import matplotlib.pyplot as plt
 from typing import Optional, Dict, List
@@ -24,10 +25,10 @@ class MFPolicyTrainer:
         policy: BasePolicy,
         eval_env: gym.Env,
         eval_env_idx: int,
-        cost_fn,
         logger: WandbLogger,
         epoch: int = 1000,
         step_per_epoch: int = 1000,
+        local_steps: int = 3,
         batch_size: int = 256,
         num_traj: int = 0,
         eval_episodes: int = 10,
@@ -37,20 +38,23 @@ class MFPolicyTrainer:
         sampler: OnlineSampler = None,
         obs_dim: int = None,
         action_dim: int = None,
-        pomdp: list = None,
         cost_limit: float = 0.0,
+        reward_fn = None,
+        cost_fn = None,
         device=None,
     ) -> None:
         self.policy = policy
         self.eval_env = eval_env
         self.eval_env_idx = eval_env_idx
+        self.reward_fn = reward_fn # eval reward fn
+        self.cost_fn = cost_fn # eval cost fn
         self.buffer = buffer
         self.sampler = sampler
-        self.cost_fn = cost_fn
         self.logger = logger
 
         self._epoch = epoch
         self._step_per_epoch = step_per_epoch
+        self._local_steps = local_steps
         self._batch_size = batch_size
         self._num_traj = num_traj
         self._eval_episodes = eval_episodes
@@ -58,7 +62,6 @@ class MFPolicyTrainer:
 
         self.obs_dim = obs_dim
         self.action_dim = action_dim        
-        self.pomdp = pomdp
 
         self._device = device
         
@@ -66,7 +69,7 @@ class MFPolicyTrainer:
         self.cost_limit = cost_limit
 
         self.current_epoch = 0
-        self.log_interval = 10
+        self.log_interval = 20
         self.rendering = rendering
         self.recorded_frames = []
 
@@ -202,6 +205,20 @@ class MFPolicyTrainer:
                 obs = (obs - self.buffer.obs_mean) / (self.buffer.obs_std + 1e-10)
         return obs
     
+    def average_dict(self, dict_list):
+        sums = {}
+        counts = {}
+        for d in dict_list:
+            for key, value in d.items():
+                if key in sums:
+                    sums[key] += value
+                    counts[key] += 1
+                else:
+                    sums[key] = value
+                    counts[key] = 1
+        averages = {key: sums[key] / counts[key] for key in sums}
+        return averages
+
     def _evaluate(self, seed) -> Dict[str, List[float]]:
         self.policy.eval()
         num_episodes = 0
@@ -227,16 +244,12 @@ class MFPolicyTrainer:
                 with torch.no_grad():
                     a, _ = self.policy.select_action(e_s, deterministic=True) #(obs).reshape(1,-1)
                 try:
-                    ns, rew, trunc, term, infos = self.eval_env.step(a.flatten())
+                    ns, rew, trunc, term, infos = self.eval_env.step(a.flatten()); cost = 0.0
                     done = term or trunc
                 except:
-                    ns, rew, term, infos = self.eval_env.step(a.flatten())
+                    ns, rew, term, infos = self.eval_env.step(a.flatten()); cost = 0.0
                     done = term
-                cost = self.cost_fn(s, a, ns)
-                try:
-                    success = infos['success']
-                except:
-                    success = 0.0
+                success = infos['success']
                 
                 mask = 0 if done else 1
                 
@@ -283,7 +296,7 @@ class MFPolicyTrainer:
         file_name = 'rendering' + str(self.current_epoch*self._step_per_epoch) +'.avi'
         output_file = os.path.join(directory, file_name)
         fourcc = cv2.VideoWriter_fourcc(*'XVID')  # Codec for AVI file
-        fps = 60
+        fps = 120
         width = 480
         height = 480
         out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))

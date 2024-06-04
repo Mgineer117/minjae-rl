@@ -14,7 +14,8 @@ class ReplayBuffer:
         obs_dtype: np.dtype,
         action_dim: int,
         action_dtype: np.dtype,
-        pomdp: list = None,
+        obs_norm: bool = False,
+        rew_norm: bool = False,
         device: str = "cpu"
     ) -> None:
         self._max_size = buffer_size
@@ -22,8 +23,8 @@ class ReplayBuffer:
         self.obs_dtype = obs_dtype
         self.action_dim = action_dim
         self.action_dtype = action_dtype
-        self.pomdp = pomdp
-        self._obs_normalized = False
+        self.obs_norm = obs_norm
+        self.rew_norm = rew_norm
 
         self._ptr = 0
         self._size = 0
@@ -81,7 +82,7 @@ class ReplayBuffer:
         rewards = np.array(dataset["rewards"], dtype=np.float32).reshape(-1, 1)
         terminals = np.array(dataset["terminals"], dtype=np.float32).reshape(-1, 1)
         initial_observations = np.array(next_observations[(terminals == 1).squeeze()], dtype=self.obs_dtype)
-
+        
         self.observations = observations
         self.next_observations = next_observations
         self.initial_observations = initial_observations
@@ -89,23 +90,16 @@ class ReplayBuffer:
         self.rewards = rewards
         self.terminals = terminals
 
+        if self.obs_norm:
+            self.normalize_obs()
+        if self.rew_norm:
+            self.normalize_rew()
+
         self._ptr = len(observations)
         self._size = len(observations)
         self._init_size = len(initial_observations)
         self._tot_traj = terminals.sum()
         self._traj_indexes = np.array([0] + list(np.where(self.terminals == 1)[0]))
-    
-    def make_pomdp(self):
-        observations = np.delete(self.observations, self.pomdp, axis=1)
-        next_observations = np.delete(self.next_observations, self.pomdp, axis=1)
-        initial_observations = np.delete(self.initial_observations, self.pomdp, axis=1)
-        if self._obs_normalized:
-            self._obs_mean = np.delete(self._obs_mean, self.pomdp)
-            self._obs_std = np.delete(self._obs_std, self.pomdp)
-
-        self.observations = observations    
-        self.next_observations = next_observations
-        self.initial_observations = initial_observations
     
     def normalize_obs(self, eps: float = 1e-10) -> Tuple[np.ndarray, np.ndarray]:
         mean = np.mean(self.observations, axis=0)
@@ -114,16 +108,13 @@ class ReplayBuffer:
         self.next_observations = (self.next_observations - mean) / (std + eps)
         self.initial_observations = (self.initial_observations - mean) / (std + eps)
 
-        self._obs_mean, self._obs_std = mean, std
-        self._obs_normalized = True
-        return self._obs_mean, self._obs_std
+        self.obs_mean, self.obs_std = mean, std
     
-    def normalize_rewards(self, eps: float = 1e-3) -> Tuple[np.ndarray, np.ndarray]:
+    def normalize_rew(self, eps: float = 1e-3) -> Tuple[np.ndarray, np.ndarray]:
         mean = self.rewards.mean()
         std = self.rewards.std() + eps
         self.rewards = (self.rewards - mean) / std
-        reward_mean, reward_std = mean, std
-        return reward_mean, reward_std
+        self.rew_mean, self.rew_std = mean, std
 
     def sample(self, batch_size: int = 512, num_traj: int = 0) -> Dict[str, torch.Tensor]:
         if num_traj == 0:

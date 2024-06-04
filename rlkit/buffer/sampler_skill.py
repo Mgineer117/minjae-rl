@@ -50,7 +50,6 @@ class OnlineSkillSampler:
         episode_len: int,
         episode_num: int,
         training_envs: list,
-        cost_fn,
         running_state = None,
         num_cores: int = None,
         masking_indices = None,
@@ -65,7 +64,6 @@ class OnlineSkillSampler:
         self.running_state = running_state
         self.masking_indices = masking_indices
         self.data_num = data_num
-        self.cost_fn = cost_fn
 
         self.device = torch.device(device)
 
@@ -177,11 +175,9 @@ class OnlineSkillSampler:
                 except:
                     ns, rew, term, infos = env.step(a)                    
                     trunc = True if t == episode_len else False
-                try:
-                    success = infos['success']
-                except:
-                    success = 0.0 
-                cost = self.cost_fn(s, a, ns)
+                success = infos['success']
+                cost = 0.0
+
                 done = trunc or term
                 mask = 0 if done else 1
                 

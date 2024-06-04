@@ -97,12 +97,7 @@ def train(args=get_args()):
                 device = args.device
             )
             masking_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                           22, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
-            '''
-            0   1  2  3 4  5  6  7  8  9  10 11 12 13 14 15 16 17
-            18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35
-            36 37 38
-            '''
+                                22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
             added_masking_indices = [x + args.embed_dim for x in masking_indices]
         else:
             print('...No task embedding is applied')
@@ -112,7 +107,7 @@ def train(args=get_args()):
         running_state = ZFilter(args.obs_shape, clip=5)
 
         actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh)
-        blind_actor_backbone = MLP(input_dim=args.embed_dim + 11, hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh)
+        blind_actor_backbone = MLP(input_dim=args.embed_dim + 10, hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh)
         critic_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape), hidden_dims=args.hidden_dims, activation=torch.nn.Tanh,)
         
         dist = DiagGaussian(

@@ -68,7 +68,7 @@ class MFSkillPolicyTrainer:
         self.cost_limit = cost_limit
 
         self.current_epoch = 0
-        self.log_interval = 10
+        self.log_interval = 20
         self.rendering = rendering
         self.recorded_frames = []
 
@@ -137,21 +137,11 @@ class MFSkillPolicyTrainer:
             self.current_epoch = e
             self.policy.train()
             for it in trange(self._step_per_epoch, desc=f"Training", leave=False):
-                # policy
-                #batch, sample_time = self.sampler.collect_samples(self.policy, seed, is_blind=False)
-                #policy_loss = self.policy.policy_learn(batch); policy_loss['policy_sample_time'] = sample_time
-
                 # blind policy
-                batch, sample_time = self.sampler.collect_samples(self.policy, seed, is_blind=True)
-                blind_loss = self.policy.blind_policy_learn(batch); blind_loss['blind_policy_sample_time'] = sample_time
+                batch, sample_time = self.sampler.collect_samples(self.policy, seed)
+                loss = self.policy.policy_learn(batch); loss['policy_sample_time'] = sample_time
 
-                #loss = dict()
-                #for key, item in policy_loss.items():
-                    #loss[key] = item
-                #for key, item in blind_loss.items():
-                #    loss[key] = item
-                #self.logger.store(**loss)
-                self.logger.store(**blind_loss)
+                self.logger.store(**loss)
                 self.logger.write_without_reset(int(e*self._step_per_epoch + it))
 
             if self.lr_scheduler is not None:
@@ -215,10 +205,6 @@ class MFSkillPolicyTrainer:
                 obs = (obs - self.buffer.obs_mean) / (self.buffer.obs_std + 1e-10)
         return obs
     
-    def mask_obs(self, obs):
-        masked_obs = np.delete(obs, self.masking_indices, axis=-1)
-        return masked_obs
-    
     def _evaluate(self, seed) -> Dict[str, List[float]]:
         self.policy.eval()
         num_episodes = 0
@@ -234,7 +220,6 @@ class MFSkillPolicyTrainer:
             mdp = (s, a, ns, np.array([0]), np.array([1]))
             with torch.no_grad():
                 s, _, e_s, _, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=True)
-            e_s = self.mask_obs(e_s.cpu())
 
             eval_ep_info_buffer = []            
             episode_reward, episode_cost, episode_length, episode_success = 0, 0, 0, 0
@@ -242,8 +227,8 @@ class MFSkillPolicyTrainer:
             done = False
             while not done:
                 with torch.no_grad():
-                    #a, _ = self.policy.select_action(e_s, deterministic=True) #(obs).reshape(1,-1)
-                    a, _ = self.policy.blind_select_action(e_s, deterministic=True) #(obs).reshape(1,-1)
+                    a, _ = self.policy.select_action(e_s, deterministic=True) #(obs).reshape(1,-1)
+                    
                 try:
                     ns, rew, trunc, term, infos = self.eval_env.step(a.flatten())
                     done = term or trunc
@@ -273,7 +258,6 @@ class MFSkillPolicyTrainer:
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
                     _, ns, _, e_ns, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=False)
-                e_ns = self.mask_obs(e_ns.cpu())
 
                 s = ns
                 e_s = e_ns
@@ -302,7 +286,7 @@ class MFSkillPolicyTrainer:
         file_name = 'rendering' + str(self.current_epoch*self._step_per_epoch) +'.avi'
         output_file = os.path.join(directory, file_name)
         fourcc = cv2.VideoWriter_fourcc(*'XVID')  # Codec for AVI file
-        fps = 60
+        fps = 120
         width = 480
         height = 480
         out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
