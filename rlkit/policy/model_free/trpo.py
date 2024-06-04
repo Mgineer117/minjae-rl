@@ -175,7 +175,7 @@ class TRPOPolicy(BasePolicy):
         successes = torch.from_numpy(batch['successes']).to(self.device)
 
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
-        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs)
+        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
 
         values = self.critic(embedded_obss)
 

@@ -1,8 +1,4 @@
-import gym.envs
-import gym.envs.mujoco
-import gym.envs.mujoco.hopper_v4
 import numpy as np
-import gym
             
 def load_reward_fn(key, num_task=3):
     """
