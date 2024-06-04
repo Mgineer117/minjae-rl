@@ -105,9 +105,12 @@ def train(args=get_args()):
                 device = args.device
             )
             optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
-            masking_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                                22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+            masking_indices = [0, 1, 2, 3, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                                18, 19, 20, 21, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+                            #[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                              #  22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
             masking_indices_length = len(masking_indices)
+            args.masking_indices = masking_indices
         elif args.embed_type == 'task':
             rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
             encoder = RecurrentEncoder(
@@ -120,6 +123,7 @@ def train(args=get_args()):
             optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
             masking_indices = None
             masking_indices_length = 0
+            args.masking_indices = masking_indices
         elif args.embed_type == 'onehot': # for multi-task only
             args.embed_dim = len(training_envs)
             encoder = OneHotEncoder(
@@ -129,10 +133,12 @@ def train(args=get_args()):
             )
             masking_indices = None
             masking_indices_length = 0
+            args.masking_indices = masking_indices
         else:
             encoder = BaseEncoder(device=args.device)
             masking_indices = None
             masking_indices_length = 0
+            args.masking_indices = masking_indices
             args.embed_dim = 0
 
         # define necessary ingredients for training
