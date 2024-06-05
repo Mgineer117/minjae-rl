@@ -1,6 +1,7 @@
 import os
 import time
 import numpy as np
+import pickle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -24,10 +25,12 @@ class OPTMAMLPolicy(nn.Module):
             data_actor,
             v_network,
             e_network,
+            encoder,
             v_network_optim,
             e_network_optim,
+            encoder_optim,
             args,
-            encoder: BaseEncoder = BaseEncoder(),
+            masking_indices=None,
             ):
         super(OPTMAMLPolicy, self).__init__()
         self._gamma = args.gamma
@@ -46,6 +49,7 @@ class OPTMAMLPolicy(nn.Module):
         self._e_l2_reg = args.e_l2_reg
         self._lamb_scale = args.lamb_scale
         self._reward_scale = args.reward_scale
+        self.masking_indices = masking_indices
 
         self._iteration = torch.tensor(0, dtype=torch.int64, requires_grad=False)
         self._optimizers = dict()
@@ -59,7 +63,9 @@ class OPTMAMLPolicy(nn.Module):
 
         # encoder
         self._encoder = encoder
+        self._optimizers['encoder'] = encoder_optim
 
+        self.device = args.device
         self.args = args
 
         # GenDICE regularization, i.e., E[w] = 1.
@@ -121,6 +127,7 @@ class OPTMAMLPolicy(nn.Module):
             if self._use_data_policy_entropy_constraint:
                 self._data_log_ent_coeff = torch.tensor(0.0, dtype=torch.float32, requires_grad=True)
                 self._optimizers['data_ent_coeff'] = optim.Adam([self._data_log_ent_coeff], lr=self._lr)
+
 
     def v_loss(self, initial_v_values, e_v, w_v, f_w_v, result={}):
         # Compute v loss
@@ -305,8 +312,8 @@ class OPTMAMLPolicy(nn.Module):
         return action.cpu().numpy()
         
     def learn(self, batch): 
-        observation, action, next_observation, initial_observation, reward, terminal = batch["observations"], batch["actions"], \
-            batch["next_observations"], batch["initial_observations"], batch["rewards"], batch["terminals"]
+        observation, action, next_observation, initial_observation, reward, env_idx, terminal, mask = batch["observations"], batch["actions"], \
+            batch["next_observations"], batch["initial_observations"], batch["rewards"], batch["env_idxs"], batch["terminals"], batch["masks"]
         reward = reward * self._reward_scale
 
         # Shared network values
@@ -324,7 +331,10 @@ class OPTMAMLPolicy(nn.Module):
             w_v_lamb = self._r_fn(preactivation_v_lamb)
             f_w_v_lamb = self._g_fn(preactivation_v_lamb)
 
-        e_values = self._e_network(observation, action)
+        mdp_tuple = (observation, action, next_observation, reward, mask)
+        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idx, reset=True)
+
+        e_values = self._e_network(embedded_obss, action)
         preactivation_e = (e_values - self._lamb_scale * self._lamb_e) / self._alpha
         w_e = self._r_fn(preactivation_e)
         f_w_e = self._g_fn(preactivation_e)
@@ -334,7 +344,6 @@ class OPTMAMLPolicy(nn.Module):
             w_e_lamb = self._r_fn(preactivation_e_lamb)
             f_w_e_lamb = self._g_fn(preactivation_e_lamb)
         
-
         # Compute loss and optimize
         loss_result = self.v_loss(initial_v_values, e_v, w_v, f_w_v, result={})
 
@@ -351,9 +360,13 @@ class OPTMAMLPolicy(nn.Module):
         
         loss_result.update(self.e_loss(e_v.detach(), e_values, w_e, f_w_e))
 
-        self._optimizers['e'].zero_grad()
+        self._optimizers['e'].zero_grad(); 
+        if self._optimizers['encoder'] is not None:
+            self._optimizers['encoder'].zero_grad()
         e_loss = loss_result['e_loss']; e_loss.backward()
-        self._optimizers['e'].step()
+        self._optimizers['e'].step(); 
+        if self._optimizers['encoder'] is not None:
+            self._optimizers['encoder'].step()
 
         if self._gendice_e:
             loss_result.update(self.lamb_e_loss(e_v.detach(), w_e_lamb, f_w_e_lamb))
@@ -361,7 +374,7 @@ class OPTMAMLPolicy(nn.Module):
             lamb_e_loss = loss_result['lamb_e_loss']; lamb_e_loss.backward()
             self._optimizers['lamb_e'].step()
 
-        loss_result.update(self.policy_loss(observation, action, w_e.detach()))
+        loss_result.update(self.policy_loss(embedded_obss.detach(), action, w_e.detach()))
         
         # manual gradient updates
         self._optimizers['policy'].zero_grad()
@@ -369,8 +382,8 @@ class OPTMAMLPolicy(nn.Module):
         policy_grads = torch.autograd.grad(policy_loss, self._policy_network.parameters(), retain_graph=True, create_graph=True)
         for param, grad in zip(self._policy_network.parameters(), policy_grads):
             param.grad = grad
-        #policy_loss = loss_result['policy_loss']; policy_loss.backward(retain_graph=True, create_graph=True)
         self._optimizers['policy'].step()
+
         # compute second derivate of loss (parameter gradients)
         second_derivative = torch.zeros((policy_grads.shape))
         for i in range(second_derivative.numel()):
@@ -381,6 +394,7 @@ class OPTMAMLPolicy(nn.Module):
             ent_coeff_loss = loss_result['ent_coeff_loss']; ent_coeff_loss.backward()
             self._optimizers['ent_coeff'].step()
 
+        '''
         if self._policy_extraction == 'iproj':
             loss_result.update(self.data_policy_loss(observation, action))
             
@@ -392,7 +406,7 @@ class OPTMAMLPolicy(nn.Module):
                 self._optimizers['data_ent_coeff'].zero_grad()
                 data_ent_coeff_loss = loss_result['data_ent_coeff_loss']; data_ent_coeff_loss.backward()
                 self._optimizers['data_ent_coeff'].step()
-
+        '''
         loss_result.update({"e_v": torch.mean(e_v)})
         loss_result.update({"e_values": torch.mean(e_values)})
 
@@ -418,16 +432,11 @@ class OPTMAMLPolicy(nn.Module):
 
     def encode_obs(self, mdp_tuple, env_idx = None, reset=False):
         '''
-        Given mdp = (s, a, s', r, mask)
-        return embedding, embedded_next_obs = embedding is attached to the next_ob
+        Input: mdp = (s, a, s', r, mask)
+        Return: s, s', (s + embedding), (s' + embeding)
           since it should include the information of reward and transition dynamics
-        It should handle both tensor and numpy since some do not have network embedding but some do.
-        All encoders take input in tensors
-        Hence, we transform to tensor for all cases but return as tensor if is_batch else as numpy
         '''
         obs, actions, next_obs, rewards, masks = mdp_tuple
-        # check dimension
-        is_batch = True if len(obs.shape) > 1 else False
 
         # transform to tensor
         obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
@@ -436,41 +445,46 @@ class OPTMAMLPolicy(nn.Module):
         rewards = torch.as_tensor(rewards, device=self.device, dtype=torch.float32)
         masks = torch.as_tensor(masks, device=self.device, dtype=torch.int32)
 
-        if self._encoder.encoder_type == 'none':
+        if self.encoder.encoder_type == 'none':
             # skip embedding
-            embedding = None
-            embedded_obs = obs
-            embedded_next_obs = next_obs
-            return obs, next_obs, embedded_obs, embedded_next_obs
-        elif self._encoder.encoder_type == 'onehot':
-            obs_embedding = self._encoder(obs, env_idx)
-            next_obs_embedding = self._encoder(next_obs, env_idx)
+            embedding, embedded_obs, embedded_next_obs = None, obs, next_obs
+        elif self.encoder.encoder_type == 'onehot':
+            obs_embedding = self.encoder(obs, env_idx)
+            next_obs_embedding = self.encoder(next_obs, env_idx)
             embedded_obs = torch.concatenate((obs_embedding, obs), axis=-1) 
             embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
-            return obs, next_obs, embedded_obs, embedded_next_obs
-        elif self._encoder.encoder_type == 'recurrent':
-            if is_batch:
-                t_obs = torch.concatenate((obs[0][None, :], obs), axis=0)
-                t_actions = torch.concatenate((actions[0][None, :], actions), axis=0)
-                t_next_obs = torch.concatenate((obs[0][None, :], next_obs), axis=0)
-                t_rewards = torch.concatenate((torch.tensor([0.0]).to(self.device)[None, :], rewards), axis=0)
-                t_masks = torch.concatenate((torch.tensor([1.0]).to(self.device)[None, :], masks), axis=0)
-
-                mdp = (t_obs, t_actions, t_next_obs, t_rewards, t_masks)
-                embedding = self._encoder(mdp, do_reset=reset, is_batch=is_batch)
-                embedded_obs = torch.concatenate((embedding[:-1], obs), axis=-1)
-                embedded_next_obs = torch.concatenate((embedding[1:], next_obs), axis=-1)
-                return obs, next_obs, embedded_obs, embedded_next_obs
-            else:
-                mdp = torch.concatenate((obs, actions, next_obs, rewards), axis=-1)
-                mdp = mdp[None, None, :]
-                embedding = self._encoder(mdp, do_reset=reset)
-                embedded_next_obs = torch.concatenate((embedding, next_obs), axis=-1)
-                embedded_obs = embedded_next_obs
-                return obs, next_obs, embedded_obs, embedded_next_obs
+        elif self.encoder.encoder_type == 'recurrent':
+            embedding = self.encoder(mdp_tuple, do_reset=reset, is_batch=True)
+            embedding = torch.concatenate((torch.zeros(1,embedding.shape[-1]).to(self.device), embedding), axis=0)
+            embedded_obs = torch.concatenate((embedding[:-1], self.mask_obs(obs, self.masking_indices, dim=-1)), axis=-1)
+            embedded_next_obs = torch.concatenate((embedding[1:], self.mask_obs(next_obs, self.masking_indices, dim=-1)), axis=-1)       
         else:
             NotImplementedError
+        return obs, next_obs, embedded_obs, embedded_next_obs
 
+    def save_model(self, logdir, epoch, running_state=None, is_best=False):
+        self.actor, self.data_actor, self.v_network, self.e_network = self.actor.cpu(), self.data_actor.cpu(), self.v_network.cpu(), self.e_network.cpu()
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder = self.encoder.cpu()
+        # save checkpoint
+        if is_best:
+            path = os.path.join(logdir, "best_model.p")
+        else:
+            path = os.path.join(logdir, "model_" + str(epoch) + ".p")
+        pickle.dump((self.actor, self.critic), open(path, 'wb'))
+        if running_state is not None:
+            pickle.dump((self.actor, self.critic, running_state), open(path, 'wb'))
+        self.actor, self.data_actor, self.v_network, self.e_network = self.actor.to(self.device), self.data_actor.to(self.device), self.v_network.to(self.device), self.e_network.to(self.device)
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder = self.encoder.to(self.device)
+
+    def mask_obs(self, obs: torch.Tensor, ind: list, dim: int) -> torch.Tensor:
+        obs = obs.cpu().numpy()
+        if ind is not None:
+            obs = np.delete(obs, ind, axis=dim)
+        obs = torch.from_numpy(obs).to(self.device)
+        return obs
+    
     def get_loss_info(self):
         loss_info = {
             'iteration': self._iteration.item()

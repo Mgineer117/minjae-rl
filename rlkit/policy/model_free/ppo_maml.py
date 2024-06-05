@@ -258,13 +258,19 @@ class PPOMAMLPolicy(BasePolicy):
         v_loss.backward()
 
         self.optimizer.step()
-    
+
     def save_model(self, logdir, epoch, running_state=None, is_best=False):
+        self.actor, self.critic = self.actor.cpu(), self.critic.cpu()
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder = self.encoder.cpu()
         # save checkpoint
         if is_best:
             path = os.path.join(logdir, "best_model.p")
         else:
             path = os.path.join(logdir, "model_" + str(epoch) + ".p")
-        pickle.dump((self.actor, self.critic), open(path, 'wb'))
+        pickle.dump((self.actor, self.critic, self.encoder), open(path, 'wb'))
         if running_state is not None:
-            pickle.dump((self.actor, self.critic, running_state), open(path, 'wb'))
+            pickle.dump((self.actor, self.critic, self.encoder, running_state), open(path, 'wb'))
+        self.actor, self.critic = self.actor.to(self.device), self.critic.to(self.device)
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder = self.encoder.to(self.device)

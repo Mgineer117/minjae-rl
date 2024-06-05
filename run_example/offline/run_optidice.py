@@ -13,8 +13,10 @@ import wandb
 import numpy as np
 import torch
 
-from rlkit.nets import MLP
+from rlkit.utils.utils import seed_all, select_device
+from rlkit.nets import MLP, RNNModel, RecurrentEncoder, BaseEncoder
 from rlkit.modules import DiceActor, Critic, TanhDiagGaussian, TanhMixDiagGaussian
+from rlkit.utils.load_buffer import collect_gym_buffers, collect_metagym_buffers, collect_d4rl_buffers
 from rlkit.utils.load_dataset import qlearning_dataset
 from rlkit.buffer import ReplayBuffer
 from rlkit.utils.wandb_logger import WandbLogger
@@ -37,12 +39,7 @@ ENV_NAME = [
     'walker2d-medium-expert-v0',
     'hopper-medium-expert-v0',
 ]
-MASKING_IDX = {
-    # Index to delete
-    'hopper': [0, 5, 6, 8, 9, 10], 
-    'walker2d': [8, 9, 10, 11, 12, 13, 14, 15, 16],
-    'halfcheetah': [4, 5, 6, 7, 13, 14, 15, 16]
-}
+
 DATA_POLICY = ['tanh_normal', 'tanh_mdn']
 F = ['chisquare', 'kl', 'elu']
 GENDICE_LOSS_TYPE = ['gendice', 'bestdice']
@@ -50,19 +47,31 @@ E_LOSS_TYPE = ['mse', 'minimax']
 
 def get_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--project", type=str, default="popodice")
+    parser.add_argument("--project", type=str, default="optimaml")
     parser.add_argument("--name", type=str, default=None)
+    parser.add_argument("--task", type=str, default=None)
+    #parser.add_argument("--task", type=str, default="hopper-medium-v2")
     parser.add_argument("--algo-name", type=str, default="optidice")
-    parser.add_argument("--task", type=str, default="hopper-medium-v2")
     parser.add_argument("--group", type=str, default=None)
     parser.add_argument("--logdir", type=str, default="log")
+
+    '''Env parameters'''
+    parser.add_argument('--env-type', type=str, default='d4rl') # Gym or MetaGym or d4rl
+    parser.add_argument('--agent-type', type=str, default='hopper') # MT1, ML45, Hopper, Ant
+    parser.add_argument('--task-name', type=str, default='medium') # None for Gym and MetaGym except ML1 or MT1 'pick-place'
+    parser.add_argument('--task-num', type=int, default=None) # only for Gym: 2 3 4 5
+
+    '''Update parameters'''
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
     parser.add_argument("--actor-lr", type=float, default=3e-4)
     parser.add_argument("--critic-lr", type=float, default=3e-4)
     parser.add_argument("--gamma", type=float, default=0.99)                  ########## TUNE
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
+    parser.add_argument("--embed-type", type=str, default='none') # skill, task, or none
+    parser.add_argument("--embed-dim", type=int, default=5)
 
+    '''Algorithmic parameters'''
     parser.add_argument('--policy_extraction', default='iproj', type=str, choices=POLICY_EXTRACTION)
     parser.add_argument('--log_iterations', default=int(1), type=int)
     parser.add_argument('--data_policy', default='tanh_mdn', type=str, choices=DATA_POLICY)
@@ -89,69 +98,84 @@ def get_args():
     parser.add_argument('--e_l2_reg', default=None, type=float)
     parser.add_argument('--lamb_scale', default=1.0, type=float)          ########## TUNE
     
+    '''Sampling parameters'''
     parser.add_argument("--epoch", type=int, default=1000)
     parser.add_argument("--step-per-epoch", type=int, default=1000)
     parser.add_argument("--eval_episodes", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=512)
+    parser.add_argument("--num-trj", type=int, default=0)
+    parser.add_argument("--gpu-idx", type=int, default=0)
     parser.add_argument("--verbose", type=bool, default=True)
-    parser.add_argument("--pomdp", action="store_true")
-    parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-
 
     return parser.parse_args()
 
 
-def train(param, args=get_args()):
+def train(args=get_args()):
     random_uuid = str(uuid.uuid4())[:4]
-    args.seeds = param
-
-    domain_name = args.task.split('-')[0]
-    pomdp = MASKING_IDX[domain_name] if args.pomdp == True else None
+    args.device = select_device(args.gpu_idx)
     
     for seed in args.seeds:
-        # create env and dataset
-        env = gym.make(args.task)
-        dataset = d4rl.qlearning_dataset(env)
-        args.obs_shape = (env.observation_space.shape[0] - len(pomdp),) if pomdp is not None else env.observation_space.shape
-        args.action_dim = np.prod(env.action_space.shape)
-        args.max_action = env.action_space.high[0]
-        print('     max action:  ', args.max_action)
-        args.target_entropy = -args.action_dim # proposed by SAC (Haarnoja et al., 2018) (−dim(A) for each task).
-
-        # create buffer
-        buffer = ReplayBuffer(
-            buffer_size=len(dataset["observations"]),
-            obs_shape=args.obs_shape,
-            obs_dtype=np.float32,
-            action_dim=args.action_dim,
-            action_dtype=np.float32,
-            pomdp=pomdp,
-            device=args.device
-        )
-        buffer.load_dataset(dataset)
-            
-        if args.normalize_obs:
-            _, _ = buffer.normalize_obs()
-
-        if args.normalize_rewards:
-            _,_ = buffer.normalize_rewards()
-
-        if args.pomdp:
-            buffer.make_pomdp()
-
         # seed
-        args.seed = seed
-        random.seed(args.seed)
-        np.random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        torch.cuda.manual_seed_all(args.seed)
-        torch.backends.cudnn.deterministic = True
+        seed_all(seed)
+
+        # create env for evaluation purpose
+        args.task = '-'.join((args.env_type, args.agent_type))
+
+        # warning
+        if (args.embed_type =='skill' or args.embed_type =='task') and args.num_trj == 0:
+            args.num_trj = 5    
+            print('Warning: num_trj is set to 0; recurrent encoder requires it to be a trj input')
+            print('setting in to 5')
+
+        # create env and dataset
+        if args.env_type =='Gym':
+            # For Gym, we use multiple reward dynamics for multiple tasks
+            training_buffers, testing_buffer, eval_env, eval_env_idx = collect_gym_buffers(args)
+        elif args.env_type =='MetaGym':
+            training_buffers, testing_buffer, eval_env, eval_env_idx = collect_metagym_buffers(args)
+        elif args.env_type == 'd4rl':
+            training_buffers, testing_buffer, eval_env, eval_env_idx = collect_d4rl_buffers(args)
+        else:
+            NotImplementedError
+
+        # define encoder 
+        if args.embed_type =='skill':
+            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
+            encoder = RecurrentEncoder(
+                input_size=rnn_size, 
+                hidden_size=rnn_size, 
+                output_size=args.embed_dim,
+                output_activation=torch.nn.Tanh(),
+                device = args.device
+            )
+            encoder_optim = torch.optim.Adam(encoder.parameters(), lr=args.critic_lr)
+            masking_indices = [0, 2, 3, 4, 7, 8, 9, 10] #[0, 5, 6, 7, 8, 9, 10] #[0, 1, 2, 3, 4, 5, 6]
+            masking_indices_length = len(masking_indices)
+        elif args.embed_type == 'task':
+            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
+            encoder = RecurrentEncoder(
+                input_size=rnn_size, 
+                hidden_size=rnn_size, 
+                output_size=args.embed_dim,
+                output_activation=torch.nn.Tanh(),
+                device = args.device
+            )
+            encoder_optim = torch.optim.Adam(encoder.parameters(), lr=args.critic_lr)
+            masking_indices = None
+            masking_indices_length = 0
+        else:
+            encoder = BaseEncoder(device=args.device)
+            encoder_optim = None
+            masking_indices = None
+            masking_indices_length = 0
+            args.embed_dim = 0
+        args.masking_indices = masking_indices
 
         # create policy model
-        actor_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, mlp_initialization=True)
-        data_actor_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=args.actor_hidden_dims, mlp_initialization=True)
+        actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape) - masking_indices_length, hidden_dims=args.actor_hidden_dims, mlp_initialization=True)
+        data_actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape) - masking_indices_length, hidden_dims=args.actor_hidden_dims, mlp_initialization=True)
         v_network_backbone = MLP(input_dim=np.prod(args.obs_shape), hidden_dims=args.hidden_dims, mlp_initialization=True)
-        e_network_backbone = MLP(input_dim=np.prod(args.obs_shape) + args.action_dim, hidden_dims=args.hidden_dims, mlp_initialization=True)
+        e_network_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape) + args.action_dim - masking_indices_length, hidden_dims=args.hidden_dims, mlp_initialization=True)
 
         actor = DiceActor(actor_backbone,
                           latent_dim=getattr(actor_backbone, "output_dim"),
@@ -172,13 +196,16 @@ def train(param, args=get_args()):
 
         # create policy
         policy = OPDPolicy(
-            actor,
-            data_actor,
-            v_network,
-            e_network,
-            v_network_optim,
-            e_network_optim,
-            args)
+            actor=actor,
+            data_actor=data_actor,
+            v_network=v_network,
+            e_network=e_network,
+            encoder=encoder,
+            v_network_optim=v_network_optim,
+            e_network_optim=e_network_optim,
+            encoder_optim=encoder_optim,
+            masking_indices=masking_indices,
+            args=args)
 
         # setup logger
         default_cfg = vars(args)#asdict(args)
@@ -194,23 +221,20 @@ def train(param, args=get_args()):
         # create policy trainer
         policy_trainer = MFPolicyTrainer(
             policy=policy,
-            eval_env=env,
-            buffer=buffer,
+            eval_env=eval_env,
+            eval_env_idx=eval_env_idx,
+            training_buffers=training_buffers,
+            testing_buffer=testing_buffer,
             logger=logger,
             epoch=args.epoch,
             step_per_epoch=args.step_per_epoch,
             batch_size=args.batch_size,
+            num_trj=args.num_trj,
             eval_episodes=args.eval_episodes,
-            obs_mean = buffer._obs_mean,
-            obs_std = buffer._obs_std,
-            pomdp=pomdp
         )
 
         # train
-        policy_trainer.train(seed, normalize=args.normalize_obs)
-
+        policy_trainer.train(seed)
 
 if __name__ == "__main__":
-    testing_param = [[1, 3, 5, 7, 9]]
-    for param in testing_param:
-        train(param=param)
+    train()

@@ -1,23 +1,10 @@
-import matplotlib.pyplot as plt
+import numpy as np
 
-# Define the two points (x, y)
-point1 = (0, 0)
-point2 = (1, 1)
+# Define your binary vector
+binary_vector = np.array([0, 1, 1, 0, 1, 0])
 
-# Create a figure
-plt.figure()
+# Invert the binary vector using logical negation
+inverted_vector = ~binary_vector.astype(bool)
 
-# Plot the two points
-plt.plot(*point1, 'ro')  # Red point
-plt.plot(*point2, 'ro')  # Red point
-
-# Draw the arrow
-plt.arrow(point1[0], point1[1], point2[0] - point1[0], point2[1] - point1[1], 
-          head_width=0.05, head_length=0.1, fc='black', ec='black')
-
-# Set plot limits
-plt.xlim(-1, 2)
-plt.ylim(-1, 2)
-
-# Show the plot
-plt.show()
+print("Original binary vector:", binary_vector)
+print("Inverted binary vector:", np.int32(inverted_vector))

@@ -82,13 +82,21 @@ class ReplayBuffer:
         rewards = np.array(dataset["rewards"], dtype=np.float32).reshape(-1, 1)
         terminals = np.array(dataset["terminals"], dtype=np.float32).reshape(-1, 1)
         initial_observations = np.array(next_observations[(terminals == 1).squeeze()], dtype=self.obs_dtype)
-        
+        try:
+            masks = np.array(dataset["masks"], dtype=np.int32).reshape(-1, 1)
+            env_idxs = np.array(dataset["env_idxs"], dtype=np.int32).reshape(-1, 1)    
+        except:
+            masks = np.int32(~terminals.astype(bool)).reshape(-1, 1)    
+            env_idxs = np.zeros(masks.shape, dtype=np.int32).reshape(-1, 1)    
+
         self.observations = observations
         self.next_observations = next_observations
         self.initial_observations = initial_observations
         self.actions = actions
         self.rewards = rewards
         self.terminals = terminals
+        self.masks = masks
+        self.env_idxs = env_idxs
 
         if self.obs_norm:
             self.normalize_obs()
@@ -99,7 +107,7 @@ class ReplayBuffer:
         self._size = len(observations)
         self._init_size = len(initial_observations)
         self._tot_traj = terminals.sum()
-        self._traj_indexes = np.array([0] + list(np.where(self.terminals == 1)[0]))
+        self._traj_indexes = np.array([0] + list(np.where(self.terminals == 1)[0] + 1))
     
     def normalize_obs(self, eps: float = 1e-10) -> Tuple[np.ndarray, np.ndarray]:
         mean = np.mean(self.observations, axis=0)
@@ -126,19 +134,22 @@ class ReplayBuffer:
                 "next_observations": torch.tensor(self.next_observations[batch_indexes]).to(self.device),
                 "initial_observations": torch.tensor(self.initial_observations[init_batch_indexes]).to(self.device),
                 "terminals": torch.tensor(self.terminals[batch_indexes]).to(self.device),
+                "masks": torch.tensor(self.masks[batch_indexes]).to(self.device),
+                "env_idxs": torch.tensor(self.masks[batch_indexes]).to(self.device),
                 "rewards": torch.tensor(self.rewards[batch_indexes]).to(self.device)
             }
         else:
             traj_indexes = np.random.randint(0, self._tot_traj, size=num_traj)
-            batch_indexes = np.concatenate([np.arange(self._traj_indexes[traj_idx - 1], self._traj_indexes[traj_idx]) 
+            batch_indexes = np.concatenate([np.arange(self._traj_indexes[traj_idx], self._traj_indexes[traj_idx + 1]) 
                                             for traj_idx in traj_indexes])
-            
             batch = {
                 "observations": torch.tensor(self.observations[batch_indexes]).to(self.device),
                 "actions": torch.tensor(self.actions[batch_indexes]).to(self.device),
                 "next_observations": torch.tensor(self.next_observations[batch_indexes]).to(self.device),
                 "initial_observations": torch.tensor(self.initial_observations[traj_indexes]).to(self.device),
                 "terminals": torch.tensor(self.terminals[batch_indexes]).to(self.device),
+                "masks": torch.tensor(self.masks[batch_indexes]).to(self.device),
+                "env_idxs": torch.tensor(self.env_idxs[batch_indexes]).to(self.device),
                 "rewards": torch.tensor(self.rewards[batch_indexes]).to(self.device)
             }
 

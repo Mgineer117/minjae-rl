@@ -351,6 +351,9 @@ class CPOPolicy(BasePolicy):
         return result 
     
     def save_model(self, logdir, epoch, running_state=None, is_best=False):
+        self.actor, self.r_critic, self.c_critic = self.actor.cpu(), self.r_critic.cpu(), self.c_critic.cpu()
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder = self.encoder.cpu()
         # save checkpoint
         if is_best:
             path = os.path.join(logdir, "best_model.p")
@@ -359,3 +362,6 @@ class CPOPolicy(BasePolicy):
         pickle.dump((self.actor, self.r_critic, self.c_critic), open(path, 'wb'))
         if running_state is not None:
             pickle.dump((self.actor, self.r_critic, self.c_critic, running_state), open(path, 'wb'))
+        self.actor, self.r_critic, self.c_critic = self.actor.to(self.device), self.r_critic.to(self.device), self.c_critic.to(self.device)
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder = self.encoder.to(self.device)

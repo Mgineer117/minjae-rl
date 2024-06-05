@@ -48,12 +48,12 @@ def get_args():
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--critic-lr", type=float, default=3e-4)
     parser.add_argument("--local-steps", type=int, default=3)
-    parser.add_argument("--embed-type", type=str, default='skill') # skill, task, or none
+    parser.add_argument("--embed-type", type=str, default='none') # skill, task, or none
     parser.add_argument("--embed-dim", type=int, default=5)
 
     '''Sampling parameters'''
     parser.add_argument('--epoch', type=int, default=3000)
-    parser.add_argument("--step-per-epoch", type=int, default=10)
+    parser.add_argument("--step-per-epoch", type=int, default=1)
     parser.add_argument('--episode_len', type=int, default=1000)
     parser.add_argument('--episode_num', type=int, default=2)
     parser.add_argument("--eval_episodes", type=int, default=3)

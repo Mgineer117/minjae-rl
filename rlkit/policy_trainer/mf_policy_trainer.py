@@ -30,33 +30,31 @@ class MFPolicyTrainer:
         step_per_epoch: int = 1000,
         local_steps: int = 3,
         batch_size: int = 256,
-        num_traj: int = 0,
+        num_trj: int = 0,
         eval_episodes: int = 10,
         rendering: bool = False,
         lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
-        buffer: ReplayBuffer = None,
+        training_buffers: ReplayBuffer = None,
+        testing_buffer: ReplayBuffer = None,
         sampler: OnlineSampler = None,
         obs_dim: int = None,
         action_dim: int = None,
         cost_limit: float = 0.0,
-        reward_fn = None,
-        cost_fn = None,
         device=None,
     ) -> None:
         self.policy = policy
+        self.training_buffers = training_buffers
+        self.testing_buffer = testing_buffer
+        self.sampler = sampler
         self.eval_env = eval_env
         self.eval_env_idx = eval_env_idx
-        self.reward_fn = reward_fn # eval reward fn
-        self.cost_fn = cost_fn # eval cost fn
-        self.buffer = buffer
-        self.sampler = sampler
         self.logger = logger
 
         self._epoch = epoch
         self._step_per_epoch = step_per_epoch
         self._local_steps = local_steps
         self._batch_size = batch_size
-        self._num_traj = num_traj
+        self._num_trj = num_trj
         self._eval_episodes = eval_episodes
         self.lr_scheduler = lr_scheduler
 
@@ -84,8 +82,11 @@ class MFPolicyTrainer:
             self.policy.train()
 
             for it in trange(self._step_per_epoch, desc=f"Training", leave=False):
-                batch = self.buffer.sample(self._batch_size, self._num_traj)
-                loss = self.policy.learn(batch)
+                batches = []
+                for buffer in self.training_buffers:
+                    batches.append(buffer.sample(self._batch_size, self._num_trj))
+                batches = self.aggregate_batches(batches)
+                loss = self.policy.learn(batches)
                 self.logger.store(**loss)
                 self.logger.write_without_reset(int(e*self._step_per_epoch + it))
 
@@ -120,12 +121,19 @@ class MFPolicyTrainer:
                 last_10_performance.append(ep_reward_mean)
             self.logger.store(**eval_data)        
             self.logger.write(int(e*self._step_per_epoch + it), display=False)
-            if self.current_epoch % self.log_interval == 0:
-                # save checkpoint
-                torch.save(self.policy.state_dict(), os.path.join(self.logger.checkpoint_dir, "policy_" +str(e)+ ".pth"))
 
+        self.logger.store(**eval_data)        
+        self.logger.write(int(e*self._step_per_epoch + it), display=False)
+        
+        # save checkpoint
+        if self.current_epoch % self.log_interval == 0:
+            self.policy.save_model(self.logger.checkpoint_dir, e, self.sampler.running_state)
+        # save the best model
+        if np.mean(last_10_performance) >= self.last_max_reward and np.mean(last_10_performance) <= self.cost_limit:
+            self.policy.save_model(self.logger.log_dir, e, self.sampler.running_state, is_best=True)
+            self.last_max_reward = np.mean(last_10_performance)
+        
         self.logger.print("total time: {:.2f}s".format(time.time() - start_time))
-        torch.save(self.policy.state_dict(), os.path.join(self.logger.log_dir, "policy.pth"))
         return {"last_10_performance": np.mean(last_10_performance)}
     
     def online_train(self, seed) -> Dict[str, float]:
@@ -200,9 +208,9 @@ class MFPolicyTrainer:
             self.sampler.running_state.fix = True
             obs = self.sampler.running_state(obs)
             self.sampler.running_state.fix = False
-        elif self.buffer is not None: # check if it is offline training
-            if self.buffer._obs_normalized: # check if obs is normalized
-                obs = (obs - self.buffer.obs_mean) / (self.buffer.obs_std + 1e-10)
+        elif self.testing_buffer is not None: # check if it is offline training
+            if self.testing_buffer._obs_normalized: # check if obs is normalized
+                obs = (obs - self.testing_buffer.obs_mean) / (self.testing_buffer.obs_std + 1e-10)
         return obs
     
     def average_dict(self, dict_list):
@@ -288,6 +296,16 @@ class MFPolicyTrainer:
             "eval/episode_length": [ep_info["episode_length"] for ep_info in eval_ep_info_buffer],
             "eval/episode_success_rate": [ep_info["episode_success_rate"] for ep_info in eval_ep_info_buffer],
         }
+    
+    def aggregate_batches(self, batches):
+        memory = dict()
+        for batch in batches:
+            for key, value in batch.items():
+                if key in memory:
+                    memory[key] = torch.cat((memory[key], value), dim=0)
+                else:
+                    memory[key] = value
+        return memory
     
     def save_rendering(self, path):
         directory = os.path.join(path, 'video')

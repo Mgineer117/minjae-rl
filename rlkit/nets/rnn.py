@@ -186,7 +186,7 @@ class RecurrentEncoder(nn.Module):
 
         for i, traj in enumerate(trajs):
             padded_data[i, :lengths[i], :] = traj
-
+        
         return padded_data, lengths
     
 class RecurrentOfflineEncoder(nn.Module):

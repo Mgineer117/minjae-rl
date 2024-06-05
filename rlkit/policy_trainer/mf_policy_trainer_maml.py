@@ -32,37 +32,35 @@ class MFMAMLPolicyTrainer:
         step_per_epoch: int = 1000,
         local_steps: int = 3,
         batch_size: int = 256,
-        num_traj: int = 0,
+        num_trj: int = 0,
         eval_episodes: int = 10,
         rendering: bool = False,
         lr_scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
-        buffer: ReplayBuffer = None,
+        training_buffers: ReplayBuffer = None,
+        testing_buffer: ReplayBuffer = None,
         sampler: OnlineSampler = None,
         eval_sampler: OnlineSampler = None,
         obs_dim: int = None,
         action_dim: int = None,
         cost_limit: float = 0.0,
-        reward_fn = None,
-        cost_fn = None,
-        added_masking_indices=None,
         device=None,
     ) -> None:
         self.policy = policy
-        self.param_size = sum(p.numel() for p in self.policy.actor.parameters())
-        self.eval_env = eval_env
-        self.eval_env_idx = eval_env_idx
-        self.reward_fn = reward_fn # eval reward fn
-        self.cost_fn = cost_fn # eval cost fn
-        self.buffer = buffer
+        self.training_buffers = training_buffers
+        self.testing_buffer = testing_buffer
         self.sampler = sampler
         self.eval_sampler = eval_sampler
+        self.eval_env = eval_env
+        self.eval_env_idx = eval_env_idx
         self.logger = logger
 
+        self.param_size = sum(p.numel() for p in self.policy.actor.parameters())
+        
         self._epoch = epoch
         self._step_per_epoch = step_per_epoch
         self._local_steps = local_steps
         self._batch_size = batch_size
-        self._num_traj = num_traj
+        self._num_trj = num_trj
         self._eval_episodes = eval_episodes
         self.lr_scheduler = lr_scheduler
 
@@ -73,8 +71,6 @@ class MFMAMLPolicyTrainer:
         
         self.last_max_reward = 0.0
         self.cost_limit = cost_limit
-
-        self.added_masking_indices = added_masking_indices
 
         self.current_epoch = 0
         self.log_interval = 20
@@ -99,29 +95,31 @@ class MFMAMLPolicyTrainer:
             self.policy.train()
 
             for it in trange(self._step_per_epoch, desc=f"Training", leave=False):
-                meta_gradients = []
-                meta_losses = []
-                for buffer in self.buffers[:-1]:
-                    gradients = []
-                    losses = []
-                    # copy for local update
-                    local_policy = deepcopy(self.policy)
-                    for k in trange(self._local_steps, desc=f"Local-update", leave=False):
-                        batch = buffer.sample(self._batch_size, self._num_traj)
-                        loss, (_, second_grad) = local_policy.learn(batch)
-                        gradients.append(1 - second_grad) # parameter gradients = 1 - second_grad
-                        losses.append(loss)
-                    
-                    batch = buffer.sample(self._batch_size, self._num_traj)
-                    _, (first_grad, _) = local_policy.learn(batch) # first_grad = nabla(Loss)
-                    meta_grad = first_grad * torch.prod(torch.tensor(gradients))
-                    meta_gradients.append(meta_grad)
-                    meta_losses.append(self.average_dict(losses))
-                
-                average_meta_grad = torch.mean(torch.tensor(meta_gradients))
-                self.policy.meta_update(average_meta_grad)
+                local_policy_list = [deepcopy(self.policy) for _ in range(len(self.sampler))]
+                param_gradients = [torch.ones(self.param_size) for _ in range(len(self.sampler))]
+                queue = multiprocessing.Manager().Queue()
 
-                loss = self.average_dict(meta_losses)
+                '''Begin K+1 update loop'''
+                for k in trange(self._local_steps, desc=f"Local-update", leave=False):
+                    '''Sample multiple batches'''
+                    batches = [None] * len(self.training_buffers)
+                    for i, buffer in enumerate(self.training_buffers):
+                        batches[i] = buffer.sample(batch_size=self._batch_size, num_trj=self._num_trj)
+
+                    '''Gradient local computing''' # it updates local_policy and param_gradients
+                    _ = self.update_rule(local_policy_list, queue, batches, param_gradients, k)
+                
+                '''Sample multiple batches'''
+                batches = [None] * len(self.training_buffers)
+                for i, buffer in enumerate(self.training_buffers):
+                    batches[i] = buffer.sample(batch_size=self._batch_size, num_trj=self._num_trj)
+
+                '''Gradient local computing''' # it updates local_policy and param_gradients
+                loss = self.update_rule(local_policy_list, queue, batches, param_gradients, k)
+
+                average_meta_grad = torch.mean(torch.stack(param_gradients), axis=0)
+                self.meta_update(batches, average_meta_grad)
+
                 self.logger.store(**loss)
                 self.logger.write_without_reset(int(e*self._step_per_epoch + it))
                 num_timesteps += 1
@@ -155,9 +153,14 @@ class MFMAMLPolicyTrainer:
                 last_10_performance.append(ep_reward_mean)
             self.logger.store(**eval_data)        
             self.logger.write(int(e*self._step_per_epoch + it), display=False)
+            
+            # save checkpoint
             if self.current_epoch % self.log_interval == 0:
-                # save checkpoint
-                torch.save(self.policy.state_dict(), os.path.join(self.logger.checkpoint_dir, "policy_" +str(e)+ ".pth"))
+                self.policy.save_model(self.logger.checkpoint_dir, e, self.sampler.running_state)
+            # save the best model
+            if np.mean(last_10_performance) >= self.last_max_reward:
+                self.policy.save_model(self.logger.log_dir, e, self.sampler.running_state, is_best=True)
+                self.last_max_reward = np.mean(last_10_performance)
 
         '''
         meta-test
@@ -243,9 +246,14 @@ class MFMAMLPolicyTrainer:
                 last_10_performance.append(ep_reward_mean)
             self.logger.store(**eval_data)        
             self.logger.write(int(e*self._step_per_epoch + it), display=False)
+
+            # save checkpoint
             if self.current_epoch % self.log_interval == 0:
-                # save checkpoint
-                torch.save(self.policy.state_dict(), os.path.join(self.logger.checkpoint_dir, "policy_" +str(e)+ ".pth"))
+                self.policy.save_model(self.logger.checkpoint_dir, e)
+            # save the best model
+            if np.mean(last_10_performance) >= self.last_max_reward:
+                self.policy.save_model(self.logger.log_dir, e, is_best=True)
+                self.last_max_reward = np.mean(last_10_performance)
 
         '''meta-test'''
         self.meta_test_update(self.eval_sampler, self.policy, seed)
@@ -323,14 +331,14 @@ class MFMAMLPolicyTrainer:
             loss = {f"meta_test/{key}": value for key, value in loss.items()}
             self.logger.store(**loss)        
             self.logger.write(int(e), display=False)
-
+    
     def aggregate_batches(self, batches):
         memory = dict()
         for batch in batches:
-            for key in ['observations', 'rewards', 'masks', 'terminals', 'logprobs', 'successes', 'actions', 'next_observations', 'env_idxs']:
-                tensor = torch.from_numpy(batch[key]).to(self.device)
+            for key, value in batch.items():
+                tensor = torch.from_numpy(value).to(self.device)
                 if key in memory:
-                    memory[key] = torch.concatenate((memory[key], tensor))
+                    memory[key] = torch.cat((memory[key], tensor), dim=0)
                 else:
                     memory[key] = tensor
         return memory
@@ -340,9 +348,9 @@ class MFMAMLPolicyTrainer:
             self.eval_sampler.running_state.fix = True
             obs = self.eval_sampler.running_state(obs)
             self.eval_sampler.running_state.fix = False
-        elif self.buffer is not None: # check if it is offline training
-            if self.buffer._obs_normalized: # check if obs is normalized
-                obs = (obs - self.buffer.obs_mean) / (self.buffer.obs_std + 1e-10)
+        elif self.testing_buffer is not None: # check if it is offline training
+            if self.testing_buffer._obs_normalized: # check if obs is normalized
+                obs = (obs - self.testing_buffer.obs_mean) / (self.testing_buffer.obs_std + 1e-10)
         return obs
     
     def average_dict(self, dict_list):

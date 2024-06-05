@@ -24,8 +24,11 @@ class OPDPolicy(nn.Module):
             data_actor,
             v_network,
             e_network,
+            encoder,
             v_network_optim,
             e_network_optim,
+            encoder_optim,
+            masking_indices,
             args):
         super(OPDPolicy, self).__init__()
         self._gamma = args.gamma
@@ -55,6 +58,12 @@ class OPDPolicy(nn.Module):
         self._e_network = e_network
         self._optimizers['e'] = e_network_optim
 
+        self._encoder = encoder
+        self._optimizers['encoder'] = encoder_optim
+
+        self.masking_indices = masking_indices
+
+        self.device = args.device
         self.args = args
 
         # GenDICE regularization, i.e., E[w] = 1.
@@ -300,8 +309,8 @@ class OPDPolicy(nn.Module):
         return action.cpu().numpy()
         
     def learn(self, batch): 
-        observation, action, next_observation, initial_observation, reward, terminal = batch["observations"], batch["actions"], \
-            batch["next_observations"], batch["initial_observations"], batch["rewards"], batch["terminals"]
+        observation, action, next_observation, initial_observation, reward, env_idx, terminal, mask = batch["observations"], batch["actions"], \
+            batch["next_observations"], batch["initial_observations"], batch["rewards"], batch["env_idxs"], batch["terminals"], batch["masks"]
         reward = reward * self._reward_scale
 
         # Shared network values
@@ -319,7 +328,10 @@ class OPDPolicy(nn.Module):
             w_v_lamb = self._r_fn(preactivation_v_lamb)
             f_w_v_lamb = self._g_fn(preactivation_v_lamb)
 
-        e_values = self._e_network(observation, action)
+        mdp_tuple = (observation, action, next_observation, reward, mask)
+        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idx, reset=True)
+        
+        e_values = self._e_network(embedded_obss, action)
         preactivation_e = (e_values - self._lamb_scale * self._lamb_e) / self._alpha
         w_e = self._r_fn(preactivation_e)
         f_w_e = self._g_fn(preactivation_e)
@@ -347,8 +359,12 @@ class OPDPolicy(nn.Module):
         loss_result.update(self.e_loss(e_v.detach(), e_values, w_e, f_w_e))
 
         self._optimizers['e'].zero_grad()
+        if self._optimizers['encoder'] is not None:
+            self._optimizers['encoder'].zero_grad()
         e_loss = loss_result['e_loss']; e_loss.backward()
         self._optimizers['e'].step()
+        if self._optimizers['encoder'] is not None:
+            self._optimizers['encoder'].step()
 
         if self._gendice_e:
             loss_result.update(self.lamb_e_loss(e_v.detach(), w_e_lamb, f_w_e_lamb))
@@ -356,7 +372,7 @@ class OPDPolicy(nn.Module):
             lamb_e_loss = loss_result['lamb_e_loss']; lamb_e_loss.backward()
             self._optimizers['lamb_e'].step()
 
-        loss_result.update(self.policy_loss(observation, action, w_e.detach()))
+        loss_result.update(self.policy_loss(embedded_obss.detach(), action, w_e.detach()))
         
         self._optimizers['policy'].zero_grad()
         policy_loss = loss_result['policy_loss']; policy_loss.backward()
@@ -369,7 +385,7 @@ class OPDPolicy(nn.Module):
 
 
         if self._policy_extraction == 'iproj':
-            loss_result.update(self.data_policy_loss(observation, action))
+            loss_result.update(self.data_policy_loss(embedded_obss.detach(), action))
             
             self._optimizers['data_policy'].zero_grad()
             data_policy_loss = loss_result['data_policy_loss']; data_policy_loss.backward()
@@ -395,6 +411,45 @@ class OPDPolicy(nn.Module):
         
         return loss_dict
 
+    def encode_obs(self, mdp_tuple, env_idx = None, reset=False):
+        '''
+        Input: mdp = (s, a, s', r, mask)
+        Return: s, s', (s + embedding), (s' + embeding)
+          since it should include the information of reward and transition dynamics
+        '''
+        obs, actions, next_obs, rewards, masks = mdp_tuple
+
+        # transform to tensor
+        obs = torch.as_tensor(obs, device=self.device, dtype=torch.float32)
+        actions = torch.as_tensor(actions, device=self.device, dtype=torch.float32)
+        next_obs = torch.as_tensor(next_obs, device=self.device, dtype=torch.float32)
+        rewards = torch.as_tensor(rewards, device=self.device, dtype=torch.float32)
+        masks = torch.as_tensor(masks, device=self.device, dtype=torch.int32)
+
+        if self._encoder.encoder_type == 'none':
+            # skip embedding
+            embedding, embedded_obs, embedded_next_obs = None, obs, next_obs
+        elif self._encoder.encoder_type == 'onehot':
+            obs_embedding = self._encoder(obs, env_idx)
+            next_obs_embedding = self._encoder(next_obs, env_idx)
+            embedded_obs = torch.concatenate((obs_embedding, obs), axis=-1) 
+            embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
+        elif self._encoder.encoder_type == 'recurrent':
+            embedding = self._encoder(mdp_tuple, do_reset=reset, is_batch=True)
+            embedding = torch.concatenate((torch.zeros(1, embedding.shape[-1]).to(self.device), embedding), axis=0)
+            embedded_obs = torch.concatenate((embedding[:-1], self.mask_obs(obs, self.masking_indices, dim=-1)), axis=-1)
+            embedded_next_obs = torch.concatenate((embedding[1:], self.mask_obs(next_obs, self.masking_indices, dim=-1)), axis=-1)       
+        else:
+            NotImplementedError
+        return obs, next_obs, embedded_obs, embedded_next_obs
+
+    def mask_obs(self, obs: torch.Tensor, ind: list, dim: int) -> torch.Tensor:
+        obs = obs.cpu().numpy()
+        if ind is not None:
+            obs = np.delete(obs, ind, axis=dim)
+        obs = torch.from_numpy(obs).to(self.device)
+        return obs
+    
     def get_loss_info(self):
         loss_info = {
             'iteration': self._iteration.item()
