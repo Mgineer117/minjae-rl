@@ -55,7 +55,7 @@ class TRPOPolicy(BasePolicy):
             masking_indices: list = None,
             tau: float = 0.95,
             gamma: float  = 0.99,
-            max_kl: float = 1e-2,
+            max_kl: float = 1e-3,
             damping: float = 1e-2,
             l2_reg: float = 1e-6,
             grad_norm: bool = False,

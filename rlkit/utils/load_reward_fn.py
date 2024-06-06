@@ -65,7 +65,7 @@ def load_reward_fn(key, num_task=3):
         for _ in range(num_task):
             param = np.random.uniform(0.5, 1.5)
             reward_fn_list.append(reward_fn(param))
-        param = np.random.uniform(2.0, 3.0)
+        param = np.random.uniform(2.5, 3.0)
         reward_fn_list.append(reward_fn(param))
     elif key == 'Gym-Humanoid-Standup':
         class reward_fn:

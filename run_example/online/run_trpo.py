@@ -26,7 +26,7 @@ from rlkit.policy import TRPOPolicy
 def get_args():
     parser = argparse.ArgumentParser()
     '''WandB and Logging parameters'''
-    parser.add_argument("--project", type=str, default="OMRL")
+    parser.add_argument("--project", type=str, default="optimaml")
     parser.add_argument("--name", type=str, default=None)
     parser.add_argument('--task', type=str, default=None) # None, naming began using environmental parameters
     parser.add_argument("--algo-name", type=str, default="trpo")
@@ -34,10 +34,10 @@ def get_args():
     parser.add_argument("--logdir", type=str, default="log")
 
     '''OpenAI Gym parameters'''
-    parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
-    parser.add_argument('--agent-type', type=str, default='MT10') # MT1, ML45, Hopper, Ant
+    parser.add_argument('--env-type', type=str, default='Gym') # Gym or MetaGym
+    parser.add_argument('--agent-type', type=str, default='Hopper') # MT1, ML45, Hopper, Ant
     parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
-    parser.add_argument('--task-num', type=int, default=None) # 10, 45, 50
+    parser.add_argument('--task-num', type=int, default=5) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
@@ -79,7 +79,7 @@ def train(args=get_args()):
                 reward_fn_list = load_reward_fn(args.task, num_task=args.task_num)
             else:
                 reward_fn_list = None
-            training_envs, testing_envs, eval_env_idx = load_gym_env(args.task, reward_fn=reward_fn_list)
+            training_envs, testing_envs, eval_env_idx = load_gym_env(args.task, reward_fn=[reward_fn_list[1], reward_fn_list[-1]])
         elif args.env_type =='MetaGym':
             training_envs, testing_envs, eval_env_idx = load_metagym_env(args.task, args.task_name, args.task_num, render_mode='rgb_array')
         else:

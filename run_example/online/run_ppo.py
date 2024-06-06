@@ -49,8 +49,11 @@ def get_args():
     parser.add_argument("--eps-clip", type=float, default=0.2)
     parser.add_argument("--actor-lr", type=float, default=1e-4)
     parser.add_argument("--critic-lr", type=float, default=3e-4)
-    parser.add_argument("--embed-type", type=str, default='none') # skill, task, onehot, or none
+    parser.add_argument("--embed-type", type=str, default='skill') # skill, task, onehot, or none
+    parser.add_argument("--embed-loss", type=str, default='action') # action or reward
     parser.add_argument("--embed-dim", type=int, default=10)
+    parser.add_argument("--masking-indices", type=list, default=[])
+
 
     '''Sampling parameters'''
     parser.add_argument('--epoch', type=int, default=5000)
@@ -105,11 +108,11 @@ def train(args=get_args()):
                 device = args.device
             )
             optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
-            masking_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                                22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
-            #[0, 1, 2, 3, 18, 19, 20, 21]
-                            #
-            masking_indices_length = len(masking_indices)
+            #args.masking_indices = [0, 1, 2, 3, 4]
+                            #[0, 1, 2, 3, 18, 19, 20, 21]
+                            #[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                              #  22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+            masking_indices_length = len(args.masking_indices)
         elif args.embed_type == 'task':
             rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
             encoder = RecurrentEncoder(
@@ -120,8 +123,8 @@ def train(args=get_args()):
                 device = args.device
             )
             optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
-            masking_indices = None
-            masking_indices_length = 0
+            masking_indices_length = len(args.masking_indices)
+            args.masking_indices = None
         elif args.embed_type == 'onehot': # for multi-task only
             args.embed_dim = len(training_envs)
             encoder = OneHotEncoder(
@@ -129,14 +132,14 @@ def train(args=get_args()):
                 eval_env_idx=eval_env_idx,
                 device = args.device
             )
-            masking_indices = None
-            masking_indices_length = 0
+            masking_indices_length = len(args.masking_indices)
+            args.masking_indices = None
         else:
             encoder = BaseEncoder(device=args.device)
-            masking_indices = None
-            masking_indices_length = 0
+            masking_indices_length = len(args.masking_indices)
+            args.masking_indices = None
             args.embed_dim = 0
-        args.masking_indices = masking_indices
+
         # define necessary ingredients for training
         #running_state = ZFilter(args.obs_shape, clip=5)
         running_state = None
@@ -189,7 +192,8 @@ def train(args=get_args()):
             critic=critic,
             encoder=encoder,
             optimizer=optimizer,
-            masking_indices=masking_indices,
+            masking_indices=args.masking_indices,
+            embed_loss=args.embed_loss,
             K_epochs=args.K_epochs,
             eps_clip=args.eps_clip,
             device=args.device
