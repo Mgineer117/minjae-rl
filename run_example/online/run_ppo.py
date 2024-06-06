@@ -35,10 +35,10 @@ def get_args():
     parser.add_argument("--logdir", type=str, default="log")
 
     '''OpenAI Gym parameters'''
-    parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
-    parser.add_argument('--agent-type', type=str, default='MT10') # MT1, ML45, Hopper, Ant
+    parser.add_argument('--env-type', type=str, default='Gym') # Gym or MetaGym
+    parser.add_argument('--agent-type', type=str, default='Hopper') # MT1, ML45, Hopper, Ant
     parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
-    parser.add_argument('--task-num', type=int, default=None) # 10, 45, 50
+    parser.add_argument('--task-num', type=int, default=3) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
