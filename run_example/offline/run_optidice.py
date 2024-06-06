@@ -56,9 +56,9 @@ def get_args():
     parser.add_argument("--logdir", type=str, default="log")
 
     '''Env parameters'''
-    parser.add_argument('--env-type', type=str, default='d4rl') # Gym or MetaGym or d4rl
-    parser.add_argument('--agent-type', type=str, default='hopper') # MT1, ML45, Hopper, Ant
-    parser.add_argument('--task-name', type=str, default='medium') # None for Gym and MetaGym except ML1 or MT1 'pick-place'
+    parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym or d4rl
+    parser.add_argument('--agent-type', type=str, default='ML10') # MT1, ML45, Hopper, Ant
+    parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
     parser.add_argument('--task-num', type=int, default=None) # only for Gym: 2 3 4 5
 
     '''Update parameters'''
@@ -90,8 +90,8 @@ def get_args():
     parser.add_argument('--gendice_v', default=True, type=bool)
     parser.add_argument('--gendice_e', default=True, type=bool)
     parser.add_argument('--gendice_loss_type', default='bestdice', type=str, choices=GENDICE_LOSS_TYPE)
-    parser.add_argument('--normalize-obs', default=True, type=bool)
-    parser.add_argument('--normalize-rewards', default=True, type=bool)
+    parser.add_argument('--normalize-obs', default=False, type=bool)
+    parser.add_argument('--normalize-rewards', default=False, type=bool)
     parser.add_argument('--reward_scale', default=1e-1, type=float)
     parser.add_argument('--e_loss_type', default='minimax', type=str, choices=E_LOSS_TYPE)          ########## TUNE
     parser.add_argument('--v_l2_reg', default=None, type=float)

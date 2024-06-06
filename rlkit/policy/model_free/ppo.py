@@ -20,6 +20,7 @@ class PPOPolicy(BasePolicy):
             encoder: BaseEncoder,
             optimizer: torch.optim.Optimizer,
             masking_indices: list = None,
+            embed_loss: str = None,
             tau: float = 0.95,
             gamma: float = 0.99,
             K_epochs: int = 3,
@@ -37,6 +38,7 @@ class PPOPolicy(BasePolicy):
         self.loss_fn = torch.nn.MSELoss()
 
         self.masking_indices = masking_indices
+        self.embed_loss = embed_loss
 
         self._gamma = gamma
         self._tau = tau
@@ -155,13 +157,18 @@ class PPOPolicy(BasePolicy):
             _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
             embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
 
-            '''get policy output'''
-            dist = self.actor(embedded_obss.detach()) # detaching the gradient to focus encoder learning with critic reward maximization
+            '''get network output'''
+            if self.embed_loss == 'action':
+                dist = self.actor(embedded_obss) # detaching the gradient to focus encoder learning with critic reward maximization
+                r_pred = self.critic(embedded_obss.detach())
+            elif self.embed_loss == 'reward':
+                dist = self.actor(embedded_obss.detach()) # detaching the gradient to focus encoder learning with critic reward maximization
+                r_pred = self.critic(embedded_obss)
+
             new_logprobs = dist.log_prob(actions)
             dist_entropy = dist.entropy()
             
             '''get value loss'''
-            r_pred = self.critic(embedded_obss)
             v_loss = self.loss_fn(r_pred, returns)
 
             '''get policy loss'''
