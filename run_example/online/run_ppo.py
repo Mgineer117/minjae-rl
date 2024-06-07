@@ -50,7 +50,7 @@ def get_args():
     parser.add_argument("--eps-clip", type=float, default=0.2)
     parser.add_argument("--actor-lr", type=float, default=1e-4)
     parser.add_argument("--critic-lr", type=float, default=3e-4)
-    parser.add_argument("--embed-type", type=str, default='skill') # skill, task, onehot, or none
+    parser.add_argument("--embed-type", type=str, default='task') # skill, task, onehot, or none
     parser.add_argument("--embed-loss", type=str, default='reward') # action or reward
     parser.add_argument("--embed-dim", type=int, default=5)
 
@@ -126,7 +126,8 @@ def train(args=get_args()):
                 device = args.device
             )
             optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
-            masking_indices_length = len(args.masking_indices)
+            
+            masking_indices_length = 0
             args.masking_indices = None
         elif args.embed_type == 'onehot': # for multi-task only
             args.embed_dim = len(training_envs)
@@ -135,11 +136,11 @@ def train(args=get_args()):
                 eval_env_idx=eval_env_idx,
                 device = args.device
             )
-            masking_indices_length = len(args.masking_indices)
+            masking_indices_length = 0
             args.masking_indices = None
         else:
             encoder = BaseEncoder(device=args.device)
-            masking_indices_length = len(args.masking_indices)
+            masking_indices_length = 0
             args.masking_indices = None
             args.embed_dim = 0
 
