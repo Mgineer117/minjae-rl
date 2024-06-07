@@ -73,7 +73,6 @@ def get_args():
 def train(args=get_args()):
     unique_id = str(uuid.uuid4())[:4]
     args.device = select_device(args.gpu_idx)
-    args.device = torch.device('cpu')
 
     for seed in args.seeds:
         # seed
