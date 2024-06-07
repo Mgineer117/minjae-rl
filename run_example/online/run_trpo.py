@@ -35,8 +35,13 @@ def get_args():
     parser.add_argument('--log-interval', type=int, default=5)
 
     '''OpenAI Gym parameters'''
+<<<<<<< HEAD
     parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
     parser.add_argument('--agent-type', type=str, default='ML10') # MT1, ML45, Hopper, Ant
+=======
+    parser.add_argument('--env-type', type=str, default='Gym') # Gym or MetaGym
+    parser.add_argument('--agent-type', type=str, default='Hopper') # MT1, ML45, Hopper, Ant
+>>>>>>> 89a491774dca6e1b9403a479777d96cce91faf7d
     parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
     parser.add_argument('--task-num', type=int, default=5) # 10, 45, 50
 
@@ -83,7 +88,11 @@ def train(args=get_args()):
                 reward_fn_list = load_reward_fn(args.task, num_task=args.task_num)
             else:
                 reward_fn_list = None
+<<<<<<< HEAD
             training_envs, testing_envs, eval_env_idx = load_gym_env(args.task, reward_fn=[reward_fn_list[4], reward_fn_list[-1]])
+=======
+            training_envs, testing_envs, eval_env_idx = load_gym_env(args.task, reward_fn=[reward_fn_list[1], reward_fn_list[-1]])
+>>>>>>> 89a491774dca6e1b9403a479777d96cce91faf7d
         elif args.env_type =='MetaGym':
             training_envs, testing_envs, eval_env_idx = load_metagym_env(args.task, args.task_name, args.task_num, render_mode='rgb_array')
         else:
