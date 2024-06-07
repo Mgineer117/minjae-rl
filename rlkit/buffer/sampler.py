@@ -8,6 +8,7 @@ import torch.multiprocessing as multiprocessing
 import torch
 import numpy as np
 
+from rlkit.utils.utils import visualize_latent_variable
 from typing import Optional, Union, Tuple, Dict
 from datetime import date
 today = date.today()
@@ -47,6 +48,7 @@ class OnlineSampler:
         self,
         obs_shape: Tuple,
         action_dim: int,
+        embed_dim: int,
         episode_len: int,
         episode_num: int,
         training_envs: list,
@@ -58,6 +60,7 @@ class OnlineSampler:
     ) -> None:
         self.obs_dim = obs_shape[0]
         self.action_dim = action_dim
+        self.embed_dim = embed_dim
         self.episode_len = episode_len
         self.episode_num = episode_num
         self.training_envs = training_envs
@@ -75,6 +78,7 @@ class OnlineSampler:
         self.total_num_worker = sum(self.num_workers_per_round)
         self.episodes_per_worker = episodes_per_worker
         self.thread_batch_size = self.episodes_per_worker * self.episode_len
+        self.num_worker_per_env = int(self.total_num_worker/len(self.training_envs))
         self.rounds = rounds
 
         print('Sampling Parameters:')
@@ -110,6 +114,7 @@ class OnlineSampler:
             observations = np.zeros((batch_size, self.obs_dim)),
             next_observations = np.zeros((batch_size, self.obs_dim)),
             actions = np.zeros((batch_size, self.action_dim)),
+            embeddings = np.zeros((batch_size, self.embed_dim)),
             rewards = np.zeros((batch_size, 1)),
             costs = np.zeros((batch_size, 1)),
             terminals = np.zeros((batch_size, 1)),
@@ -155,7 +160,7 @@ class OnlineSampler:
 
             # policy.encode should output s, ns, encoded_s, and encodded_ns
             with torch.no_grad():
-                s, _, e_s, _ = policy.encode_obs(mdp, env_idx=env_idx, reset=True)
+                s, _, e_s, _, _ = policy.encode_obs(mdp, env_idx=env_idx, reset=True)
             
             # begin the episodic loop
             while t < episode_len:
@@ -182,7 +187,7 @@ class OnlineSampler:
                 # state encoding
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
-                    _, ns, _, e_ns = policy.encode_obs(mdp, env_idx=env_idx)
+                    _, ns, _, e_ns, embedding = policy.encode_obs(mdp, env_idx=env_idx)
                 
                 # saving the data
                 data['observations'][current_step+t, :] = s
@@ -194,6 +199,7 @@ class OnlineSampler:
                 data['timeouts'][current_step+t, :] = trunc
                 data['masks'][current_step+t, :] = mask
                 data['logprobs'][current_step+t, :] = logprob
+                data['embeddings'][current_step+t, :] = embedding
                 data['env_idxs'][current_step+t, :] = env_idx    
                 data['successes'][current_step+t, :] = success
 
@@ -212,6 +218,7 @@ class OnlineSampler:
             observations=data['observations'].astype(np.float32),
             actions=data['actions'].astype(np.float32),
             next_observations=data['next_observations'].astype(np.float32),
+            embeddings=data['embeddings'].astype(np.float32),
             rewards=data['rewards'].astype(np.float32),
             costs=data['costs'].astype(np.float32),
             terminals=data['terminals'].astype(np.int32),
@@ -239,7 +246,7 @@ class OnlineSampler:
         policy.encoder.device = device
         return policy
 
-    def collect_samples(self, policy, seed, deterministic=False, pid=None, local_queue=None):
+    def collect_samples(self, policy, seed, deterministic=False, pid=None, local_queue=None, latent_path=None):
         '''
         All sampling and saving to the memory is done in numpy.
         return: dict() with elements in numpy
@@ -250,6 +257,7 @@ class OnlineSampler:
         queue = multiprocessing.Manager().Queue()
         env_idx = 0
         worker_idx = 0
+
         for round_number in range(self.rounds):
             #print(f"Starting round {round_number + 1}/{self.rounds}")
             processes = []
@@ -272,13 +280,27 @@ class OnlineSampler:
                     worker_idx += 1
                 env_idx += 1
             for p in processes:
-                p.join()
+                p.join()        
 
         worker_memories = [None] * (worker_idx - 1)
         for _ in range(worker_idx - 1): 
             pid, worker_memory = queue.get()
             worker_memories[pid] = worker_memory
+        
+        if latent_path is not None:
+            '''draw latent variable !!!'''
+            latent_info = [worker_memories[i]['embeddings'] for i in range(self.num_worker_per_env-1, len(worker_memories), self.num_worker_per_env)]
+            latent_info.append(memory['embeddings'])
+            
+            tasks_name = []
+            for env in self.training_envs:
+                try:
+                    tasks_name.append(env.task_name)
+                except:
+                    tasks_name.append(env.unwrapped.spec.id)
 
+            visualize_latent_variable(tasks_name, latent_info, latent_path)
+            
         for worker_memory in worker_memories:
             for k in memory:
                 memory[k] = np.concatenate((memory[k], worker_memory[k]), axis=0)

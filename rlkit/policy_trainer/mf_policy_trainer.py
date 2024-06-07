@@ -39,7 +39,10 @@ class MFPolicyTrainer:
         sampler: OnlineSampler = None,
         obs_dim: int = None,
         action_dim: int = None,
+        embed_dim: int = None,
         cost_limit: float = 0.0,
+        log_interval: int = 20,
+        visualize_latent_space:bool = False,
         device=None,
     ) -> None:
         self.policy = policy
@@ -60,6 +63,7 @@ class MFPolicyTrainer:
 
         self.obs_dim = obs_dim
         self.action_dim = action_dim        
+        self.embed_dim = embed_dim
 
         self._device = device
         
@@ -67,8 +71,13 @@ class MFPolicyTrainer:
         self.cost_limit = cost_limit
 
         self.current_epoch = 0
-        self.log_interval = 20
+        self.log_interval = log_interval
         self.rendering = rendering
+        self.visualize_latent_space = visualize_latent_space
+        self.latent_path = None
+        if self.visualize_latent_space:
+            directory = os.path.join(self.logger.checkpoint_dir, 'latent')
+            os.makedirs(directory)
         self.recorded_frames = []
 
     def train(self, seed) -> Dict[str, float]:
@@ -145,8 +154,12 @@ class MFPolicyTrainer:
         for e in trange(self._epoch, desc=f"Epoch"):
             self.current_epoch = e
             self.policy.train()
+            
             for it in trange(self._step_per_epoch, desc=f"Training", leave=False):
-                batch, sample_time = self.sampler.collect_samples(self.policy, seed)
+                if self.visualize_latent_space and self.embed_dim > 0:
+                    self.save_latent_space(e, it)
+
+                batch, sample_time = self.sampler.collect_samples(self.policy, seed, latent_path=self.latent_path)
                 loss = self.policy.learn(batch); loss['sample_time'] = sample_time
                 self.logger.store(**loss)
                 self.logger.write_without_reset(int(e*self._step_per_epoch + it))
@@ -242,7 +255,7 @@ class MFPolicyTrainer:
             
             mdp = (s, a, ns, np.array([0]), np.array([1]))
             with torch.no_grad():
-                s, _, e_s, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=True)
+                s, _, e_s, _, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx, reset=True)
 
             eval_ep_info_buffer = []
             episode_reward, episode_cost, episode_length, episode_success = 0, 0, 0, 0
@@ -275,7 +288,7 @@ class MFPolicyTrainer:
 
                 mdp = (s, a, ns, np.array([rew]), np.array([mask]))
                 with torch.no_grad():
-                    _, ns, _, e_ns = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx)
+                    _, ns, _, e_ns, _ = self.policy.encode_obs(mdp, env_idx=self.eval_env_idx)
                 
                 s = ns
                 e_s = e_ns
@@ -324,4 +337,8 @@ class MFPolicyTrainer:
         cv2.destroyAllWindows()
         self.recorded_frames = []
 
-
+    def save_latent_space(self, e, it):
+        if e % self.log_interval == 0 and it == 0:
+            self.latent_path = os.path.join(self.logger.checkpoint_dir, 'latent', str(self.current_epoch*self._step_per_epoch) +'.png')
+        else:
+            self.latent_path = None

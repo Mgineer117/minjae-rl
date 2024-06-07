@@ -301,19 +301,25 @@ def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: s
     elif key == 'MetaGym-ML10':
         ml = metaworld.ML10()
         training_envs = []
+        training_tasks = []
         for name, env_cls in ml.train_classes.items():
             env = env_cls(render_mode=render_mode)
             task = random.choice([task for task in ml.train_tasks
                                     if task.env_name == name])
             env.set_task(task)
+            env.task_name = task.env_name
             training_envs.append(env)
+            training_tasks.append(task)
         testing_envs = []
+        testing_tasks = []
         for name, env_cls in ml.test_classes.items():
             env = env_cls(render_mode=render_mode)
             task = random.choice([task for task in ml.test_tasks
                                     if task.env_name == name])
             env.set_task(task)
+            env.task_name = task.env_name
             testing_envs.append(env)
+            testing_tasks.append(task)
         eval_env_idx = random.choice(range(len(testing_envs)))
         testing_envs = testing_envs[eval_env_idx]
     elif key == 'MetaGym-MT10':
@@ -324,6 +330,7 @@ def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: s
             task = random.choice([task for task in ml.train_tasks
                                     if task.env_name == name])
             env.set_task(task)
+            env.task_name = task.env_name
             training_envs.append(env)
         eval_env_idx = random.choice(range(len(training_envs)))
         testing_envs = training_envs[eval_env_idx]

@@ -26,18 +26,19 @@ from rlkit.policy import TRPOPolicy
 def get_args():
     parser = argparse.ArgumentParser()
     '''WandB and Logging parameters'''
-    parser.add_argument("--project", type=str, default="OMRL")
+    parser.add_argument("--project", type=str, default="optimaml")
     parser.add_argument("--name", type=str, default=None)
     parser.add_argument('--task', type=str, default=None) # None, naming began using environmental parameters
     parser.add_argument("--algo-name", type=str, default="trpo")
     parser.add_argument("--group", type=str, default=None)
     parser.add_argument("--logdir", type=str, default="log")
+    parser.add_argument('--log-interval', type=int, default=5)
 
     '''OpenAI Gym parameters'''
     parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
-    parser.add_argument('--agent-type', type=str, default='MT10') # MT1, ML45, Hopper, Ant
+    parser.add_argument('--agent-type', type=str, default='ML10') # MT1, ML45, Hopper, Ant
     parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
-    parser.add_argument('--task-num', type=int, default=None) # 10, 45, 50
+    parser.add_argument('--task-num', type=int, default=5) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
@@ -45,18 +46,21 @@ def get_args():
     parser.add_argument('--actor-hidden-dims', default=(256, 256))
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--critic-lr", type=float, default=3e-4)
-    parser.add_argument("--embed-type", type=str, default='none') # skill, task, onehot, or none
-    parser.add_argument("--embed-dim", type=int, default=10)
+    parser.add_argument("--embed-type", type=str, default='task') # skill, task, onehot, or none
+    parser.add_argument("--embed-loss", type=str, default='action') # action or reward
+    parser.add_argument("--embed-dim", type=int, default=5)
+    parser.add_argument("--masking-indices", type=list, default=[])
 
     '''Sampling parameters'''
     parser.add_argument('--epoch', type=int, default=5000)
     parser.add_argument("--step-per-epoch", type=int, default=50)
     parser.add_argument('--episode_len', type=int, default=1000)
-    parser.add_argument('--episode_num', type=int, default=2)
+    parser.add_argument('--episode_num', type=int, default=10)
     parser.add_argument("--eval_episodes", type=int, default=3)
     parser.add_argument("--grad-norm", type=bool, default=False)
     parser.add_argument("--rendering", type=bool, default=True)
-    parser.add_argument("--data_num", type=int, default=None)
+    parser.add_argument("--visualize-latent-space", type=bool, default=True)
+    parser.add_argument("--data_num", type=int, default=False)
     parser.add_argument("--import-policy", type=bool, default=False)
     parser.add_argument("--gpu-idx", type=int, default=0)
     parser.add_argument("--verbose", type=bool, default=True)
@@ -79,7 +83,7 @@ def train(args=get_args()):
                 reward_fn_list = load_reward_fn(args.task, num_task=args.task_num)
             else:
                 reward_fn_list = None
-            training_envs, testing_envs, eval_env_idx = load_gym_env(args.task, reward_fn=reward_fn_list)
+            training_envs, testing_envs, eval_env_idx = load_gym_env(args.task, reward_fn=[reward_fn_list[4], reward_fn_list[-1]])
         elif args.env_type =='MetaGym':
             training_envs, testing_envs, eval_env_idx = load_metagym_env(args.task, args.task_name, args.task_num, render_mode='rgb_array')
         else:
@@ -161,6 +165,7 @@ def train(args=get_args()):
         
         # import pre-trained model before defining actual models
         if args.import_policy:
+            print('Importing model....')
             try:
                 actor, critic, encoder, running_state = pickle.load(open('model/model.p', "rb"))
             except:
@@ -170,6 +175,7 @@ def train(args=get_args()):
         sampler = OnlineSampler(
             obs_shape=args.obs_shape,
             action_dim=args.action_dim,
+            embed_dim=args.embed_dim,
             episode_len= args.episode_len,
             episode_num= args.episode_num,
             training_envs=training_envs,
@@ -213,6 +219,9 @@ def train(args=get_args()):
             rendering=args.rendering,
             obs_dim=args.obs_shape[0],
             action_dim=args.action_dim,
+            embed_dim=args.embed_dim,
+            log_interval=args.log_interval,
+            visualize_latent_space=args.visualize_latent_space,
             device=args.device,
         )
 

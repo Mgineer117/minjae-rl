@@ -55,7 +55,7 @@ class TRPOPolicy(BasePolicy):
             masking_indices: list = None,
             tau: float = 0.95,
             gamma: float  = 0.99,
-            max_kl: float = 1e-2,
+            max_kl: float = 1e-3,
             damping: float = 1e-2,
             l2_reg: float = 1e-6,
             grad_norm: bool = False,
@@ -163,7 +163,7 @@ class TRPOPolicy(BasePolicy):
                 embedded_obs = embedded_next_obs # we are not using this            
         else:
             NotImplementedError
-        return obs, next_obs, embedded_obs, embedded_next_obs
+        return obs, next_obs, embedded_obs, embedded_next_obs, embedding
     
     def learn(self, batch):
         obss = torch.from_numpy(batch['observations']).to(self.device)
@@ -175,7 +175,7 @@ class TRPOPolicy(BasePolicy):
         successes = torch.from_numpy(batch['successes']).to(self.device)
 
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
-        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
+        _, _, embedded_obss, _ , _= self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
 
         values = self.critic(embedded_obss)
 
