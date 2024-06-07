@@ -110,12 +110,8 @@ def train(args=get_args()):
                 device = args.device
             )
             optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
-<<<<<<< HEAD
             #args.masking_indices = #[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
                                 #22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
-=======
-            #args.masking_indices = [0, 1, 2, 3, 4]
->>>>>>> 89a491774dca6e1b9403a479777d96cce91faf7d
                             #[0, 1, 2, 3, 18, 19, 20, 21]
                             #[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
                               #  22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
