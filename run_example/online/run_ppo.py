@@ -33,7 +33,7 @@ def get_args():
     parser.add_argument("--algo-name", type=str, default="ppo")
     parser.add_argument("--group", type=str, default=None)
     parser.add_argument("--logdir", type=str, default="log")
-    parser.add_argument('--log-interval', type=int, default=5)
+    parser.add_argument('--log-interval', type=int, default=20)
 
 
     '''OpenAI Gym parameters'''
@@ -58,7 +58,7 @@ def get_args():
 
     '''Sampling parameters'''
     parser.add_argument('--epoch', type=int, default=5000)
-    parser.add_argument("--step-per-epoch", type=int, default=10)
+    parser.add_argument("--step-per-epoch", type=int, default=50)
     parser.add_argument('--episode_len', type=int, default=1000)
     parser.add_argument('--episode_num', type=int, default=2)
     parser.add_argument("--eval_episodes", type=int, default=3)
