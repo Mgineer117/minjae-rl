@@ -64,7 +64,7 @@ def get_args():
     parser.add_argument("--rendering", type=bool, default=True)
     parser.add_argument("--visualize-latent-space", type=bool, default=True)
     parser.add_argument("--data_num", type=int, default=None)
-    parser.add_argument("--import-policy", type=bool, default=True)
+    parser.add_argument("--import-policy", type=bool, default=False)
     parser.add_argument("--gpu-idx", type=int, default=0)
     parser.add_argument("--verbose", type=bool, default=True)
 
