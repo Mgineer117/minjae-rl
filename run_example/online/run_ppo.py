@@ -50,8 +50,8 @@ def get_args():
     parser.add_argument("--eps-clip", type=float, default=0.2)
     parser.add_argument("--actor-lr", type=float, default=1e-4)
     parser.add_argument("--critic-lr", type=float, default=3e-4)
-    parser.add_argument("--embed-type", type=str, default='task') # skill, task, onehot, or none
-    parser.add_argument("--embed-loss", type=str, default='reward') # action or reward
+    parser.add_argument("--embed-type", type=str, default='skill') # skill, task, onehot, or none
+    parser.add_argument("--embed-loss", type=str, default='decoder') # action or reward or decoder
     parser.add_argument("--embed-dim", type=int, default=5)
 
     '''Sampling parameters'''
@@ -73,6 +73,7 @@ def get_args():
 def train(args=get_args()):
     unique_id = str(uuid.uuid4())[:4]
     args.device = select_device(args.gpu_idx)
+    args.device = torch.device('cpu')
 
     for seed in args.seeds:
         # seed
@@ -105,16 +106,16 @@ def train(args=get_args()):
                 input_size=rnn_size, 
                 hidden_size=rnn_size, 
                 output_size=args.embed_dim,
+                obs_dim=args.obs_shape[0],
+                action_dim=args.action_dim,
                 output_activation=torch.nn.Tanh(),
                 device = args.device
             )
             optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
-            args.masking_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                                22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
-                                
+            args.masking_indices = [0, 1, 2, 3, 18, 19, 20, 21]
+                                #[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                                #22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
                             #[0, 1, 2, 3, 18, 19, 20, 21]
-                            #[4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                              #  22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
             masking_indices_length = len(args.masking_indices)
         elif args.embed_type == 'task':
             rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
@@ -122,6 +123,8 @@ def train(args=get_args()):
                 input_size=rnn_size, 
                 hidden_size=rnn_size, 
                 output_size=args.embed_dim,
+                obs_dim=args.obs_shape[0],
+                action_dim=args.action_dim,
                 output_activation=torch.nn.Tanh(),
                 device = args.device
             )

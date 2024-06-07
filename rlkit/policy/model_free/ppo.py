@@ -154,16 +154,22 @@ class PPOPolicy(BasePolicy):
 
         '''Update the parameters'''
         for _ in range(self._K_epochs):    
-            _, _, embedded_obss, _, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
+            _, _, embedded_obss, _, embedding = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
             embedded_obss = torch.as_tensor(embedded_obss, device=self.device, dtype=torch.float32)
 
             '''get network output'''
             if self.embed_loss == 'action':
                 dist = self.actor(embedded_obss) # detaching the gradient to focus encoder learning with critic reward maximization
                 r_pred = self.critic(embedded_obss.detach())
+                decoder_loss = 0
             elif self.embed_loss == 'reward':
                 dist = self.actor(embedded_obss.detach()) # detaching the gradient to focus encoder learning with critic reward maximization
                 r_pred = self.critic(embedded_obss)
+                decoder_loss = 0
+            elif self.embed_loss == 'decoder':
+                dist = self.actor(embedded_obss.detach()) # detaching the gradient to focus encoder learning with critic reward maximization
+                r_pred = self.critic(embedded_obss.detach())
+                decoder_loss = self.encoder.decode(mdp_tuple, embedding[:-1])
 
             new_logprobs = dist.log_prob(actions)
             dist_entropy = dist.entropy()
@@ -177,11 +183,11 @@ class PPOPolicy(BasePolicy):
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1-self._eps_clip, 1+self._eps_clip) * advantages
 
-            loss = torch.mean(-torch.min(surr1, surr2) + 0.5 * v_loss - 0.01 * dist_entropy)
+            loss = torch.mean(-torch.min(surr1, surr2) + 0.5 * v_loss - 0.01 * dist_entropy) + decoder_loss
 
             '''Update agents'''
             self.optimizer.zero_grad()
-            loss.backward()
+            loss.backward(); 
             self.optimizer.step()
 
         result = {

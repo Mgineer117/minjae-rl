@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 from torch.nn import functional as F
 from typing import Dict, List, Union, Tuple, Optional
+from rlkit.nets.mlp import MLP
 
 
 class Swish(nn.Module):
@@ -112,6 +113,8 @@ class RecurrentEncoder(nn.Module):
             input_size: int,
             hidden_size:int,
             output_size: int,
+            obs_dim: int,
+            action_dim: int,
             rnn_initialization: bool = True,
             output_activation=identity,
             device="cpu"
@@ -120,6 +123,8 @@ class RecurrentEncoder(nn.Module):
         self.input_size = input_size
         self.rnn_hidden_dim = hidden_size
         self.embed_dim = output_size
+        self.obs_dim=obs_dim
+        self.action_dim=action_dim
 
         # input should be (task, seq, feat) and hidden should be (task, 1, feat)
         self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
@@ -130,6 +135,20 @@ class RecurrentEncoder(nn.Module):
             nn.init.uniform_(self.last_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
 
         self.output_activation = output_activation
+
+        self.state_decoder = MLP(
+            input_dim=self.embed_dim + self.obs_dim + self.action_dim,
+            hidden_dims=(128, 128, 64, 64),
+            output_dim=self.obs_dim,
+        )
+
+        self.reward_decoder = MLP(
+            input_dim=self.embed_dim + self.obs_dim + self.action_dim + self.obs_dim,
+            hidden_dims=(128, 128, 64, 64),
+            output_dim=self.embed_dim,
+        )
+
+        self.loss_fn = torch.nn.MSELoss()
         
         self.encoder_type = 'recurrent'
         self.device = torch.device(device)
@@ -189,12 +208,30 @@ class RecurrentEncoder(nn.Module):
         
         return padded_data, lengths
     
+    def decode(self, mdp_tuple, embedding):
+        obs, actions, next_obs, rewards, masks = mdp_tuple
+
+        state_decoder_input = torch.concatenate((embedding, obs, actions), axis=-1)
+        reward_decoder_input = torch.concatenate((embedding, obs, actions, next_obs), axis=-1)
+
+        next_obs_pred = self.state_decoder(state_decoder_input)
+        decomposed_rewards_pred = self.reward_decoder(reward_decoder_input)
+
+        rewards_pred = torch.sum(decomposed_rewards_pred * embedding, axis=-1, keepdim=True)
+
+        decoder_loss = self.loss_fn(next_obs, next_obs_pred) + self.loss_fn(rewards, rewards_pred)
+
+        return decoder_loss
+    
+    
 class RecurrentOfflineEncoder(nn.Module):
     def __init__(
             self,
             input_size: int,
             hidden_size:int,
             output_size: int,
+            obs_dim: int,
+            action_dim: int,
             rnn_initialization: bool = True,
             output_activation=identity,
             device="cpu"
@@ -203,6 +240,8 @@ class RecurrentOfflineEncoder(nn.Module):
         self.input_size = input_size
         self.rnn_hidden_dim = hidden_size
         self.embed_dim = output_size
+        self.obs_dim=obs_dim
+        self.action_dim=action_dim
 
         # input should be (task, seq, feat) and hidden should be (task, 1, feat)
         self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
@@ -213,6 +252,20 @@ class RecurrentOfflineEncoder(nn.Module):
             nn.init.uniform_(self.last_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
 
         self.output_activation = output_activation
+
+        self.state_decoder = MLP(
+            input_dim=self.embed_dim + self.obs_dim + self.action_dim,
+            hidden_dims=(128, 128, 64, 64),
+            output_dim=self.obs_dim,
+        )
+
+        self.reward_decoder = MLP(
+            input_dim=self.embed_dim + self.obs_dim + self.action_dim + self.obs_dim,
+            hidden_dims=(128, 128, 64, 64),
+            output_dim=1,
+        )
+
+        self.loss_fn = torch.nn.MSELoss()
         
         self.encoder_type = 'recurrent'
         self.device = torch.device(device)
@@ -270,6 +323,20 @@ class RecurrentOfflineEncoder(nn.Module):
             padded_data[i, :lengths[i], :] = traj
 
         return padded_data, lengths
+    
+    def decode(self, mdp_tuple, embedding):
+        obs, actions, next_obs, rewards, masks = mdp_tuple
+        state_decoder_input = torch.concatenate((embedding, obs, actions))
+        reward_decoder_input = torch.concatenate((embedding, obs, actions, next_obs))
+
+        next_obs_pred = self.state_decoder(state_decoder_input)
+        rewards_pred = self.reward_decoder(reward_decoder_input)
+
+        decoder_loss = self.loss_fn(next_obs, next_obs_pred) + self.loss_fn(rewards, rewards_pred)
+
+        return decoder_loss
+
+
     
 if __name__ == "__main__":
     model = RNNModel(14, 12)
