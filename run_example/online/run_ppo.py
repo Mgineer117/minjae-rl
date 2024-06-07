@@ -33,7 +33,7 @@ def get_args():
     parser.add_argument("--algo-name", type=str, default="ppo")
     parser.add_argument("--group", type=str, default=None)
     parser.add_argument("--logdir", type=str, default="log")
-    parser.add_argument('--log-interval', type=int, default=20)
+    parser.add_argument('--log-interval', type=int, default=10)
 
     '''OpenAI Gym parameters'''
     parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
