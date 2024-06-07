@@ -50,12 +50,13 @@ def get_args():
     parser.add_argument("--eps-clip", type=float, default=0.2)
     parser.add_argument("--actor-lr", type=float, default=1e-4)
     parser.add_argument("--critic-lr", type=float, default=3e-4)
-    parser.add_argument("--embed-type", type=str, default='task') # skill, task, onehot, or none
-    parser.add_argument("--embed-loss", type=str, default='action') # action or reward
+    parser.add_argument("--embed-type", type=str, default='skill') # skill, task, onehot, or none
+    parser.add_argument("--embed-loss", type=str, default='reward') # action or reward
     parser.add_argument("--embed-dim", type=int, default=5)
 
     '''Sampling parameters'''
     parser.add_argument('--epoch', type=int, default=5000)
+    parser.add_argument('--init-epoch', type=int, default=0)
     parser.add_argument("--step-per-epoch", type=int, default=50)
     parser.add_argument('--episode_len', type=int, default=1000)
     parser.add_argument('--episode_num', type=int, default=2)
@@ -63,7 +64,7 @@ def get_args():
     parser.add_argument("--rendering", type=bool, default=True)
     parser.add_argument("--visualize-latent-space", type=bool, default=True)
     parser.add_argument("--data_num", type=int, default=None)
-    parser.add_argument("--import-policy", type=bool, default=False)
+    parser.add_argument("--import-policy", type=bool, default=True)
     parser.add_argument("--gpu-idx", type=int, default=0)
     parser.add_argument("--verbose", type=bool, default=True)
 
@@ -221,6 +222,7 @@ def train(args=get_args()):
             sampler=sampler,
             logger=logger,
             epoch=args.epoch,
+            init_epoch=args.init_epoch,
             step_per_epoch=args.step_per_epoch,
             eval_episodes=args.eval_episodes,
             rendering=args.rendering,

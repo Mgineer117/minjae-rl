@@ -174,3 +174,4 @@ def visualize_latent_variable(tasks_name, latent_data, latent_path):
     
     plt.tight_layout()
     plt.savefig(latent_path)
+    plt.close()

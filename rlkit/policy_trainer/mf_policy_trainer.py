@@ -27,7 +27,9 @@ class MFPolicyTrainer:
         eval_env_idx: int,
         logger: WandbLogger,
         epoch: int = 1000,
+        init_epoch: int = 0,
         step_per_epoch: int = 1000,
+        init_step_per_epoch: int = 0,
         local_steps: int = 3,
         batch_size: int = 256,
         num_trj: int = 0,
@@ -54,7 +56,9 @@ class MFPolicyTrainer:
         self.logger = logger
 
         self._epoch = epoch
+        self._init_epoch = init_epoch
         self._step_per_epoch = step_per_epoch
+        self._init_step_per_epoch = init_step_per_epoch
         self._local_steps = local_steps
         self._batch_size = batch_size
         self._num_trj = num_trj
@@ -151,11 +155,11 @@ class MFPolicyTrainer:
         last_10_reward_performance = deque(maxlen=10)
         last_10_cost_performance = deque(maxlen=10)
         # train loop
-        for e in trange(self._epoch, desc=f"Epoch"):
+        for e in trange(self._init_epoch, self._epoch, desc=f"Epoch"):
             self.current_epoch = e
             self.policy.train()
             
-            for it in trange(self._step_per_epoch, desc=f"Training", leave=False):
+            for it in trange(self._init_step_per_epoch, self._step_per_epoch, desc=f"Training", leave=False):
                 if self.visualize_latent_space and self.embed_dim > 0:
                     self.save_latent_space(e, it)
 
