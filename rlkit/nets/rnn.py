@@ -140,13 +140,13 @@ class RecurrentEncoder(nn.Module):
 
         self.state_decoder = MLP(
             input_dim=self.embed_dim + self.obs_dim - self.masking_dim + self.action_dim,
-            hidden_dims=(128, 128, 64, 64),
+            hidden_dims=(64, 64, 32),
             output_dim=self.obs_dim,
         )
 
         self.reward_decoder = MLP(
             input_dim=self.embed_dim + self.obs_dim - self.masking_dim + self.action_dim + self.obs_dim,
-            hidden_dims=(128, 128, 64, 64),
+            hidden_dims=(64, 64, 32),
             output_dim=self.embed_dim,
         )
 
