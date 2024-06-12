@@ -11,7 +11,7 @@ import pickle
 import numpy as np
 import torch
 
-from rlkit.utils.utils import seed_all, select_device
+from rlkit.utils.utils import seed_all, select_device, call_encoder
 from rlkit.nets import MLP, RNNModel, RecurrentEncoder, BaseEncoder, OneHotEncoder
 from rlkit.modules import ActorProb, Critic, DistCritic, DiagGaussian
 from rlkit.utils.load_dataset import qlearning_dataset
@@ -37,9 +37,9 @@ def get_args():
 
     '''OpenAI Gym parameters'''
     parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
-    parser.add_argument('--agent-type', type=str, default='ML10') # MT1, ML45, Hopper, Ant
-    parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
-    parser.add_argument('--task-num', type=int, default=None) # 10, 45, 50
+    parser.add_argument('--agent-type', type=str, default='MT1') # MT1, ML45, Hopper, Ant
+    parser.add_argument('--task-name', type=str, default='pick-place') # None for Gym and MetaGym except ML1 or MT1 'pick-place'
+    parser.add_argument('--task-num', type=int, default=1) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
@@ -53,6 +53,8 @@ def get_args():
     parser.add_argument("--embed-type", type=str, default='skill') # skill, task, onehot, or none
     parser.add_argument("--embed-loss", type=str, default='decoder') # action or reward or decoder
     parser.add_argument("--embed-dim", type=int, default=5)
+    parser.add_argument("--policy-mask-type", type=str, default='ego') # ego or other or none # this is for skill embedding
+    parser.add_argument("--decoder-mask-type", type=str, default='ego') # ego or other or none # this is for skill embedding
 
     '''Sampling parameters'''
     parser.add_argument('--epoch', type=int, default=5000)
@@ -73,6 +75,7 @@ def get_args():
 def train(args=get_args()):
     unique_id = str(uuid.uuid4())[:4]
     args.device = select_device(args.gpu_idx)
+    args.device = torch.device('cpu')
 
     for seed in args.seeds:
         # seed
@@ -99,58 +102,15 @@ def train(args=get_args()):
         optim_params = []
 
         # define encoder 
-        if args.embed_type =='skill':
-            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
-            encoder = RecurrentEncoder(
-                input_size=rnn_size, 
-                hidden_size=rnn_size, 
-                output_size=args.embed_dim,
-                obs_dim=args.obs_shape[0],
-                action_dim=args.action_dim,
-                output_activation=torch.nn.Tanh(),
-                device = args.device
-            )
-            optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
-            args.masking_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
-                                22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
-                            #[0, 1, 2, 3, 18, 19, 20, 21]
-            masking_indices_length = len(args.masking_indices)
-        elif args.embed_type == 'task':
-            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
-            encoder = RecurrentEncoder(
-                input_size=rnn_size, 
-                hidden_size=rnn_size, 
-                output_size=args.embed_dim,
-                obs_dim=args.obs_shape[0],
-                action_dim=args.action_dim,
-                output_activation=torch.nn.Tanh(),
-                device = args.device
-            )
-            optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
-            
-            masking_indices_length = 0
-            args.masking_indices = None
-        elif args.embed_type == 'onehot': # for multi-task only
-            args.embed_dim = len(training_envs)
-            encoder = OneHotEncoder(
-                embed_dim=args.embed_dim,
-                eval_env_idx=eval_env_idx,
-                device = args.device
-            )
-            masking_indices_length = 0
-            args.masking_indices = None
-        else:
-            encoder = BaseEncoder(device=args.device)
-            masking_indices_length = 0
-            args.masking_indices = None
-            args.embed_dim = 0
+        encoder, optim_params = call_encoder(training_envs, eval_env_idx, optim_params, args)
 
         # define necessary ingredients for training
         #running_state = ZFilter(args.obs_shape, clip=5)
+        # do not use running state for encoding method
         running_state = None
 
-        actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape) - masking_indices_length, hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh,)
-        critic_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape) - masking_indices_length, hidden_dims=args.hidden_dims, activation=torch.nn.Tanh,)
+        actor_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape) - len(args.masking_indices), hidden_dims=args.actor_hidden_dims, activation=torch.nn.Tanh,)
+        critic_backbone = MLP(input_dim=args.embed_dim + np.prod(args.obs_shape) - len(args.masking_indices), hidden_dims=args.hidden_dims, activation=torch.nn.Tanh,)
         
         dist = DiagGaussian(
             latent_dim=getattr(actor_backbone, "output_dim"),
@@ -199,6 +159,7 @@ def train(args=get_args()):
             encoder=encoder,
             optimizer=optimizer,
             masking_indices=args.masking_indices,
+            decoder_masking_indices=args.decoder_masking_indices,
             embed_loss=args.embed_loss,
             K_epochs=args.K_epochs,
             eps_clip=args.eps_clip,

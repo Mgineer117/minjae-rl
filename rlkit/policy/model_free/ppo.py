@@ -19,7 +19,8 @@ class PPOPolicy(BasePolicy):
             critic: nn.Module,  
             encoder: BaseEncoder,
             optimizer: torch.optim.Optimizer,
-            masking_indices: list = None,
+            masking_indices: list = [],
+            decoder_masking_indices: list = [],
             embed_loss: str = None,
             tau: float = 0.95,
             gamma: float = 0.99,
@@ -38,6 +39,7 @@ class PPOPolicy(BasePolicy):
         self.loss_fn = torch.nn.MSELoss()
 
         self.masking_indices = masking_indices
+        self.decoder_masking_indices = decoder_masking_indices
         self.embed_loss = embed_loss
 
         self._gamma = gamma
@@ -161,15 +163,19 @@ class PPOPolicy(BasePolicy):
             if self.embed_loss == 'action':
                 dist = self.actor(embedded_obss) # detaching the gradient to focus encoder learning with critic reward maximization
                 r_pred = self.critic(embedded_obss.detach())
-                decoder_loss = 0
+                decoder_loss = torch.tensor(0)
             elif self.embed_loss == 'reward':
                 dist = self.actor(embedded_obss.detach()) # detaching the gradient to focus encoder learning with critic reward maximization
                 r_pred = self.critic(embedded_obss)
-                decoder_loss = 0
+                decoder_loss = torch.tensor(0)
             elif self.embed_loss == 'decoder':
                 dist = self.actor(embedded_obss.detach()) # detaching the gradient to focus encoder learning with critic reward maximization
                 r_pred = self.critic(embedded_obss.detach())
-                decoder_loss = self.encoder.decode(mdp_tuple, embedding[:-1])
+                decoder_loss = self.encoder.decode(mdp_tuple, embedding[:-1], self.mask_obs(obss, self.decoder_masking_indices,dim=-1))
+            else:
+                dist = self.actor(embedded_obss.detach()) # detaching the gradient to focus encoder learning with critic reward maximization
+                r_pred = self.critic(embedded_obss.detach())
+                decoder_loss = torch.tensor(0)
 
             new_logprobs = dist.log_prob(actions)
             dist_entropy = dist.entropy()
@@ -193,6 +199,7 @@ class PPOPolicy(BasePolicy):
         result = {
             'loss/critic_loss': v_loss.item(),
             'loss/actor_loss': loss.item(),
+            'loss/decoder_loss': decoder_loss.item(),
             'train/episodic_reward': episodic_reward.item(),
             'train/success': successes.mean().item()
         }
@@ -201,8 +208,7 @@ class PPOPolicy(BasePolicy):
     
     def mask_obs(self, obs: torch.Tensor, ind: list, dim: int) -> torch.Tensor:
         obs = obs.cpu().numpy()
-        if ind is not None:
-            obs = np.delete(obs, ind, axis=dim)
+        obs = np.delete(obs, ind, axis=dim)
         obs = torch.from_numpy(obs).to(self.device)
         return obs
     

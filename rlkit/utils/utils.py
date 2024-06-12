@@ -3,6 +3,7 @@ import os
 import math
 import torch
 import numpy as np
+import h5py
 import matplotlib.pyplot as plt
 from matplotlib.patheffects import withStroke
 
@@ -105,6 +106,89 @@ def normal_log_density(x, mean, log_std, std):
     log_density = -(x - mean).pow(2) / (2 * var) - 0.5 * math.log(2 * math.pi) - log_std
     return log_density.sum(1, keepdim=True)
 
+def call_encoder(training_envs, eval_env_idx, optim_params, args):
+    if args.env_type == 'MetaGym':
+        if args.embed_type =='skill':
+            if args.policy_mask_type == "ego":
+                masking_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                                22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+            elif args.policy_mask_type == "other":
+                masking_indices = [0, 1, 2, 3, 18, 19, 20, 21]
+            elif args.policy_mask_type == "none":
+                masking_indices = []
+            else:
+                NotImplementedError
+            
+            if args.embed_loss == 'decoder':
+                if args.decoder_mask_type == "ego":
+                    decoder_masking_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                                    22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38]
+                elif args.decoder_mask_type == "other":
+                    decoder_masking_indices = [0, 1, 2, 3, 18, 19, 20, 21]
+                elif args.decoder_mask_type == "none":
+                    decoder_masking_indices = []
+                else:
+                    NotImplementedError
+            else:
+                decoder_masking_indices = []
+                
+        else:
+            masking_indices = []
+            decoder_masking_indices = []
+
+        args.masking_indices = masking_indices
+        args.decoder_masking_indices = decoder_masking_indices
+
+        if args.embed_type =='skill':
+            '''
+            Any masking property to enhance the role of embeddings via hidden information is here
+            '''
+            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
+            encoder = RecurrentEncoder(
+                input_size=rnn_size, 
+                hidden_size=rnn_size, 
+                output_size=args.embed_dim,
+                obs_dim=args.obs_shape[0],
+                action_dim=args.action_dim,
+                masking_dim=len(decoder_masking_indices), # because decoder is present but no policy, decoder indices lenght goes here
+                output_activation=torch.nn.Tanh(),
+                device = args.device
+            )
+            optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})           
+        elif args.embed_type == 'task':
+            '''
+            Vanilla embeddings
+            '''
+            rnn_size = int(np.prod(args.obs_shape) + args.action_dim + np.prod(args.obs_shape) + 1)
+            encoder = RecurrentEncoder(
+                input_size=rnn_size, 
+                hidden_size=rnn_size, 
+                output_size=args.embed_dim,
+                obs_dim=args.obs_shape[0],
+                action_dim=args.action_dim,
+                masking_dim=len(decoder_masking_indices), # because decoder is present but no policy, decoder indices lenght goes here
+                output_activation=torch.nn.Tanh(),
+                device = args.device
+            )
+            optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
+        elif args.embed_type == 'onehot': # for multi-task only
+            args.masking_indices = []
+            args.decoder_masking_indices = []
+            args.embed_dim = len(training_envs)
+            encoder = OneHotEncoder(
+                embed_dim=args.embed_dim,
+                eval_env_idx=eval_env_idx,
+                device = args.device
+            )
+        else:
+            encoder = BaseEncoder(device=args.device)
+            args.embed_dim = 0
+    else:
+        NotImplementedError
+
+    return encoder, optim_params
+
+
 def visualize_latent_variable(tasks_name, latent_data, latent_path):
     # Define the task name list
     num_tasks = len(tasks_name)
@@ -125,6 +209,18 @@ def visualize_latent_variable(tasks_name, latent_data, latent_path):
 
     # Generate random data for each task (500, 5) for each task
     data = {task_name: latent_data[i][:data_per_task, :] for i, task_name in enumerate(tasks_name)}
+
+    # save numerical values
+    directory, filename = os.path.split(latent_path)
+    values_directory = os.path.join(directory, "values")
+    
+    os.makedirs(values_directory, exist_ok=True)
+
+    data_file_save_directory = os.path.join(values_directory, filename.split(".")[0] + ".h5py")  
+    hfile = h5py.File(data_file_save_directory, 'w')
+    for k in data:
+        hfile.create_dataset(k, data=data[k], compression='gzip')
+    hfile.close()
 
     # Sample every 25th index
     sampled_indices = np.arange(0, data_per_task, highlight_interval)

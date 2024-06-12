@@ -276,6 +276,7 @@ def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: s
             task = random.choice([task for task in ml.train_tasks
                                     if task.env_name == name])
             env.set_task(task)
+            env.task_name = task.env_name
             training_envs.append(env)
         testing_envs = []
         for name, env_cls in ml.test_classes.items():
@@ -283,6 +284,7 @@ def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: s
             task = random.choice([task for task in ml.test_tasks
                                     if task.env_name == name])
             env.set_task(task)
+            env.task_name = task.env_name
             testing_envs.append(env)
         eval_env_idx = random.choice(range(len(testing_envs)))
         testing_envs = testing_envs[eval_env_idx]
@@ -295,6 +297,7 @@ def load_metagym_env(key, task: str = None, task_num: int = None, render_mode: s
         for task in tasks:
             env = ml.train_classes[task_name](render_mode=render_mode)  # Create an environment with task `pick_place`
             env.set_task(task)
+            env.task_name = task.env_name
             training_envs.append(env)
         eval_env_idx = random.choice(range(len(training_envs)))
         testing_envs = training_envs[eval_env_idx]

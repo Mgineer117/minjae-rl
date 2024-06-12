@@ -115,6 +115,7 @@ class RecurrentEncoder(nn.Module):
             output_size: int,
             obs_dim: int,
             action_dim: int,
+            masking_dim: int,
             rnn_initialization: bool = True,
             output_activation=identity,
             device="cpu"
@@ -125,6 +126,7 @@ class RecurrentEncoder(nn.Module):
         self.embed_dim = output_size
         self.obs_dim=obs_dim
         self.action_dim=action_dim
+        self.masking_dim=masking_dim
 
         # input should be (task, seq, feat) and hidden should be (task, 1, feat)
         self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
@@ -137,13 +139,13 @@ class RecurrentEncoder(nn.Module):
         self.output_activation = output_activation
 
         self.state_decoder = MLP(
-            input_dim=self.embed_dim + self.obs_dim + self.action_dim,
+            input_dim=self.embed_dim + self.obs_dim - self.masking_dim + self.action_dim,
             hidden_dims=(128, 128, 64, 64),
             output_dim=self.obs_dim,
         )
 
         self.reward_decoder = MLP(
-            input_dim=self.embed_dim + self.obs_dim + self.action_dim + self.obs_dim,
+            input_dim=self.embed_dim + self.obs_dim - self.masking_dim + self.action_dim + self.obs_dim,
             hidden_dims=(128, 128, 64, 64),
             output_dim=self.embed_dim,
         )
@@ -208,11 +210,11 @@ class RecurrentEncoder(nn.Module):
         
         return padded_data, lengths
     
-    def decode(self, mdp_tuple, embedding):
-        obs, actions, next_obs, rewards, masks = mdp_tuple
+    def decode(self, mdp_tuple, embedding, maksed_obs):
+        _, actions, next_obs, rewards, _ = mdp_tuple
 
-        state_decoder_input = torch.concatenate((embedding, obs, actions), axis=-1)
-        reward_decoder_input = torch.concatenate((embedding, obs, actions, next_obs), axis=-1)
+        state_decoder_input = torch.concatenate((embedding, maksed_obs, actions), axis=-1)
+        reward_decoder_input = torch.concatenate((embedding, maksed_obs, actions, next_obs), axis=-1)
 
         next_obs_pred = self.state_decoder(state_decoder_input)
         decomposed_rewards_pred = self.reward_decoder(reward_decoder_input)
