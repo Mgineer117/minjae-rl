@@ -131,7 +131,7 @@ def call_encoder(training_envs, eval_env_idx, optim_params, args):
                     NotImplementedError
             else:
                 decoder_masking_indices = []
-                
+
         else:
             masking_indices = []
             decoder_masking_indices = []
@@ -154,7 +154,7 @@ def call_encoder(training_envs, eval_env_idx, optim_params, args):
                 output_activation=torch.nn.Tanh(),
                 device = args.device
             )
-            optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})           
+            optim_params.append({'params': encoder.parameters(), 'lr': args.encoder_lr})           
         elif args.embed_type == 'task':
             '''
             Vanilla embeddings
@@ -170,7 +170,7 @@ def call_encoder(training_envs, eval_env_idx, optim_params, args):
                 output_activation=torch.nn.Tanh(),
                 device = args.device
             )
-            optim_params.append({'params': encoder.parameters(), 'lr': args.critic_lr})
+            optim_params.append({'params': encoder.parameters(), 'lr': args.encoder_lr})
         elif args.embed_type == 'onehot': # for multi-task only
             args.masking_indices = []
             args.decoder_masking_indices = []

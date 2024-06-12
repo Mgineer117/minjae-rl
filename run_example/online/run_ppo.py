@@ -37,9 +37,9 @@ def get_args():
 
     '''OpenAI Gym parameters'''
     parser.add_argument('--env-type', type=str, default='MetaGym') # Gym or MetaGym
-    parser.add_argument('--agent-type', type=str, default='MT1') # MT1, ML45, Hopper, Ant
-    parser.add_argument('--task-name', type=str, default='pick-place') # None for Gym and MetaGym except ML1 or MT1 'pick-place'
-    parser.add_argument('--task-num', type=int, default=1) # 10, 45, 50
+    parser.add_argument('--agent-type', type=str, default='ML10') # MT1, ML45, Hopper, Ant
+    parser.add_argument('--task-name', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1 'pick-place'
+    parser.add_argument('--task-num', type=int, default=None) # 10, 45, 50
 
     '''Algorithmic and sampling parameters'''
     parser.add_argument('--seeds', default=[1, 3, 5, 7, 9], type=list)
@@ -49,7 +49,8 @@ def get_args():
     parser.add_argument("--K-epochs", type=int, default=3)
     parser.add_argument("--eps-clip", type=float, default=0.2)
     parser.add_argument("--actor-lr", type=float, default=1e-4)
-    parser.add_argument("--critic-lr", type=float, default=3e-4)
+    parser.add_argument("--critic-lr", type=float, default=5e-4)
+    parser.add_argument("--encoder-lr", type=float, default=2e-4)
     parser.add_argument("--embed-type", type=str, default='skill') # skill, task, onehot, or none
     parser.add_argument("--embed-loss", type=str, default='decoder') # action or reward or decoder
     parser.add_argument("--embed-dim", type=int, default=5)
