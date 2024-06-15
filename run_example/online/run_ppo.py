@@ -59,7 +59,7 @@ def get_args():
     parser.add_argument("--decoder-mask-type", type=str, default='ego') # ego or other or none # this is for skill embedding
 
     '''Sampling parameters'''
-    parser.add_argument('--epoch', type=int, default=10000)
+    parser.add_argument('--epoch', type=int, default=20000)
     parser.add_argument('--init-epoch', type=int, default=0)
     parser.add_argument("--step-per-epoch", type=int, default=50)
     parser.add_argument('--episode_len', type=int, default=1000)
