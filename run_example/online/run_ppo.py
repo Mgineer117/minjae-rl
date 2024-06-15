@@ -49,9 +49,9 @@ def get_args():
     parser.add_argument('--hidden-dims', default=(256, 256))
     parser.add_argument("--K-epochs", type=int, default=3)
     parser.add_argument("--eps-clip", type=float, default=0.2)
-    parser.add_argument("--actor-lr", type=float, default=1e-4)
-    parser.add_argument("--critic-lr", type=float, default=5e-4)
-    parser.add_argument("--encoder-lr", type=float, default=2e-4)
+    parser.add_argument("--actor-lr", type=float, default=5e-4)
+    parser.add_argument("--critic-lr", type=float, default=3e-3)
+    parser.add_argument("--encoder-lr", type=float, default=1e-3)
     parser.add_argument("--embed-type", type=str, default='skill') # skill, task, onehot, or none
     parser.add_argument("--embed-loss", type=str, default='decoder') # action or reward or decoder
     parser.add_argument("--embed-dim", type=int, default=5)
