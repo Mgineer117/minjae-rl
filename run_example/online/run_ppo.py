@@ -29,10 +29,8 @@ def get_args():
     parser = argparse.ArgumentParser()
     '''WandB and Logging parameters'''
     parser.add_argument("--project", type=str, default="OMRL")
-    parser.add_argument("--name", type=str, default=None)
     parser.add_argument('--task', type=str, default=None) # None for Gym and MetaGym except ML1 or MT1
     parser.add_argument("--algo-name", type=str, default="ppo")
-    parser.add_argument("--group", type=str, default=None)
     parser.add_argument("--logdir", type=str, default="log")
     parser.add_argument('--log-interval', type=int, default=10)
 
@@ -169,12 +167,10 @@ def train(args=get_args()):
 
         # setup logger
         default_cfg = vars(args)#asdict(args)
-        if args.name is None:
-            args.name = args.algo_name + '-' + unique_id + "-seed" + str(seed)
-        if args.group is None:
-            args.group = args.task + "-seed-" + str(seed)
-        if args.logdir is None:
-            args.logdir = os.path.join(args.logdir, args.name, args.group)  
+        args.group = '-'.join((args.task, args.algo_name, unique_id))
+        args.name = "seed:" + str(seed)
+        args.logdir = os.path.join(args.logdir, args.group)  
+            
         logger = WandbLogger(default_cfg, args.project, args.group, args.name, args.logdir)
         logger.save_config(default_cfg, verbose=args.verbose)
 
