@@ -121,6 +121,8 @@ class RecurrentEncoder(nn.Module):
             device="cpu"
     ):
         super().__init__()
+        self.prob_inf = False
+
         self.input_size = input_size
         self.rnn_hidden_dim = hidden_size
         self.embed_dim = output_size
@@ -131,10 +133,14 @@ class RecurrentEncoder(nn.Module):
         # input should be (task, seq, feat) and hidden should be (task, 1, feat)
         self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
         
-        self.last_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
+        self.last_mu_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
+        self.last_logstd_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
+
         if rnn_initialization:
-            nn.init.uniform_(self.last_layer.weight, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
-            nn.init.uniform_(self.last_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+            nn.init.uniform_(self.last_mu_layer.weight, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+            nn.init.uniform_(self.last_mu_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+            nn.init.uniform_(self.last_logstd_layer.weight, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+            nn.init.uniform_(self.last_logstd_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
 
         self.output_activation = output_activation
 
@@ -151,6 +157,7 @@ class RecurrentEncoder(nn.Module):
         )
 
         self.loss_fn = torch.nn.MSELoss()
+        #self.loss_fn = torch.nn.L1Loss()
         
         self.encoder_type = 'recurrent'
         self.device = torch.device(device)
@@ -183,7 +190,16 @@ class RecurrentEncoder(nn.Module):
             out = torch.squeeze(out) # to match the dimension
 
         # output layer for Tanh activation
-        out = self.last_layer(out)
+        if self.prob_inf:
+            mu = self.last_mu_layer(out)
+            logstd = self.last_logstd_layer(out)
+            std = torch.exp(logstd)
+            dists = torch.distributions.normal.Normal(mu, std)
+            if is_batch:
+                self.mu = mu; self.std = std
+            out = dists.rsample()
+        else:
+            out = self.last_mu_layer(out)
         out = self.output_activation(out)
 
         embedding = out
@@ -212,133 +228,25 @@ class RecurrentEncoder(nn.Module):
     
     def decode(self, mdp_tuple, embedding, maksed_obs):
         _, actions, next_obs, rewards, _ = mdp_tuple
-
+        
         state_decoder_input = torch.concatenate((embedding, maksed_obs, actions), axis=-1)
         reward_decoder_input = torch.concatenate((embedding, maksed_obs, actions, next_obs), axis=-1)
 
         next_obs_pred = self.state_decoder(state_decoder_input)
         decomposed_rewards_pred = self.reward_decoder(reward_decoder_input)
-
         rewards_pred = torch.sum(decomposed_rewards_pred * embedding, axis=-1, keepdim=True)
 
-        decoder_loss = self.loss_fn(next_obs, next_obs_pred) + self.loss_fn(rewards, rewards_pred)
+        if self.prob_inf:
+            BCE1 = F.mse_loss(next_obs, next_obs_pred, reduction='mean')
+            BCE2 = F.mse_loss(rewards, rewards_pred, reduction='mean')
+            # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2) 
+            KLD = - 0.5 * torch.sum(1 + torch.log(self.std**2) - self.mu**2 - self.std**2)
+
+            decoder_loss = BCE1 + BCE2 + KLD
+        else:
+            decoder_loss = self.loss_fn(next_obs, next_obs_pred) + self.loss_fn(rewards, rewards_pred)
 
         return decoder_loss
-    
-    
-class RecurrentOfflineEncoder(nn.Module):
-    def __init__(
-            self,
-            input_size: int,
-            hidden_size:int,
-            output_size: int,
-            obs_dim: int,
-            action_dim: int,
-            rnn_initialization: bool = True,
-            output_activation=identity,
-            device="cpu"
-    ):
-        super().__init__()
-        self.input_size = input_size
-        self.rnn_hidden_dim = hidden_size
-        self.embed_dim = output_size
-        self.obs_dim=obs_dim
-        self.action_dim=action_dim
-
-        # input should be (task, seq, feat) and hidden should be (task, 1, feat)
-        self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
-        
-        self.last_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
-        if rnn_initialization:
-            nn.init.uniform_(self.last_layer.weight, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
-            nn.init.uniform_(self.last_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
-
-        self.output_activation = output_activation
-
-        self.state_decoder = MLP(
-            input_dim=self.embed_dim + self.obs_dim + self.action_dim,
-            hidden_dims=(128, 128, 64, 64),
-            output_dim=self.obs_dim,
-        )
-
-        self.reward_decoder = MLP(
-            input_dim=self.embed_dim + self.obs_dim + self.action_dim + self.obs_dim,
-            hidden_dims=(128, 128, 64, 64),
-            output_dim=1,
-        )
-
-        self.loss_fn = torch.nn.MSELoss()
-        
-        self.encoder_type = 'recurrent'
-        self.device = torch.device(device)
-
-        # initialize LSTM hidden state with predefined trajectory
-        self.traj_num = 100
-        self.hn = torch.zeros((1, self.traj_num, self.rnn_hidden_dim)).to(self.device)
-        self.cn = torch.zeros((1, self.traj_num, self.rnn_hidden_dim)).to(self.device)
-
-    def forward(self, input):
-        # prepare for batch update
-        input, lengths = self.pack4rnn(input)
-        input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
-        trj, seq, fea = input.shape
-        assert trj == self.traj_num
-
-        # reset the LSTM cell state
-        self.cn = torch.zeros(self.cn.shape).to(self.device)
-        
-        # pass into LSTM with allowing automatic initialization for each trajectory
-        out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
-        self.hn = hn # update only hn
-
-        output = torch.zeros((sum(lengths), fea)).to(self.device)
-        last_length = 0
-        for i, length in enumerate(lengths):
-            output[last_length:last_length+length, :] = out[i, :length, :]
-            last_length += length
-        out = output
-
-        # output layer for Tanh activation
-        out = self.last_layer(out)
-        out = self.output_activation(out)
-
-        embedding = out
-        return embedding.squeeze()
-
-    def pack4rnn(self, tuple):
-        obss, actions, next_obss, rewards, masks = tuple
-        trajs = []
-        lengths = []
-        prev_i = 0
-        for i, mask in enumerate(masks):
-            if mask == 0:
-                trajs.append(torch.concatenate((obss[prev_i:i+1, :], actions[prev_i:i+1, :], next_obss[prev_i:i+1, :], rewards[prev_i:i+1, :]), axis=-1))
-                lengths.append(i+1 - prev_i)
-                prev_i = i + 1    
-        
-        # pad the data
-        largest_length = max(lengths)
-        mdp_dim = trajs[0].shape[-1]
-        padded_data = torch.zeros((len(lengths), largest_length, mdp_dim))
-
-        for i, traj in enumerate(trajs):
-            padded_data[i, :lengths[i], :] = traj
-
-        return padded_data, lengths
-    
-    def decode(self, mdp_tuple, embedding):
-        obs, actions, next_obs, rewards, masks = mdp_tuple
-        state_decoder_input = torch.concatenate((embedding, obs, actions))
-        reward_decoder_input = torch.concatenate((embedding, obs, actions, next_obs))
-
-        next_obs_pred = self.state_decoder(state_decoder_input)
-        rewards_pred = self.reward_decoder(reward_decoder_input)
-
-        decoder_loss = self.loss_fn(next_obs, next_obs_pred) + self.loss_fn(rewards, rewards_pred)
-
-        return decoder_loss
-
-
     
 if __name__ == "__main__":
     model = RNNModel(14, 12)

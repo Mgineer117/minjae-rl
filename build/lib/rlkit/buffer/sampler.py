@@ -3,72 +3,118 @@ import time
 import math
 import h5py
 import os
-import multiprocessing
-from multiprocessing import set_start_method
+import torch.multiprocessing as multiprocessing
 
 import torch
 import numpy as np
 
+from rlkit.utils.utils import visualize_latent_variable
 from typing import Optional, Union, Tuple, Dict
 from datetime import date
 today = date.today()
 
-def cost_fn(s, a, ns):
-    cost = 0
-    if np.abs(ns[0]) > 0.3:
-        cost += 1
-    return cost
+def calculate_workers_and_rounds(environments, episodes_per_env, num_cores):
+    if episodes_per_env == 1:
+        num_worker_per_env = 1
+    elif episodes_per_env >= 2:
+        num_worker_per_env = episodes_per_env // 2
+    
+    # Calculate total number of workers
+    total_num_workers = num_worker_per_env * len(environments)
+
+    if total_num_workers > num_cores:
+        rounds = math.ceil(total_num_workers / num_cores) 
+
+        num_worker_per_round = []
+        workers_remaining = total_num_workers
+        for i in range(rounds):
+            if workers_remaining >= num_cores:
+                num_worker_per_round.append(num_cores)
+                workers_remaining -= num_cores
+            else:
+                num_worker_per_round.append(workers_remaining)
+                workers_remaining = 0
+        num_env_per_round = [int(x / num_worker_per_env) for x in num_worker_per_round] #num_worker_per_round / num_worker_per_env
+    else:
+        rounds = 1
+        num_worker_per_round = [total_num_workers]
+        num_env_per_round = [len(environments)]
+    
+    episodes_per_worker = int(episodes_per_env * len(environments) / total_num_workers)
+    return num_worker_per_round, num_env_per_round, episodes_per_worker, rounds
 
 class OnlineSampler:
     def __init__(
         self,
         obs_shape: Tuple,
         action_dim: int,
+        embed_dim: int,
         episode_len: int,
         episode_num: int,
         training_envs: list,
         running_state = None,
-        track_data: bool = False,
-        pomdp: list = None,
+        num_cores: int = None,
+        data_num: int = None,
+
         device: str = "cpu"
     ) -> None:
         self.obs_dim = obs_shape[0]
         self.action_dim = action_dim
+        self.embed_dim = embed_dim
         self.episode_len = episode_len
         self.episode_num = episode_num
         self.training_envs = training_envs
         self.running_state = running_state
-        self.track_data = track_data
-        self.data_size = 1_000_000
-        self.pomdp = pomdp
+        self.data_num = data_num
 
         self.device = torch.device(device)
 
-        self.num_worker_per_env = 1 if (self.episode_num / 2) <= 1 else math.ceil(self.episode_num / 2)
-        self.total_num_workers = int(len(self.training_envs) * self.num_worker_per_env)
-        self.thread_batch_size = int(self.episode_num * self.episode_len / self.num_worker_per_env)
-        self.queue = multiprocessing.Queue()
+        # Preprocess for multiprocessing to avoid CPU overscription and deadlock
+        self.num_cores = num_cores if num_cores is not None else multiprocessing.cpu_count() #torch.get_num_threads()
+        num_workers_per_round, num_env_per_round, episodes_per_worker, rounds = calculate_workers_and_rounds(self.training_envs, self.episode_num, self.num_cores)
+        
+        self.num_workers_per_round = num_workers_per_round
+        self.num_env_per_round = num_env_per_round
+        self.total_num_worker = sum(self.num_workers_per_round)
+        self.episodes_per_worker = episodes_per_worker
+        self.thread_batch_size = self.episodes_per_worker * self.episode_len
+        self.num_worker_per_env = int(self.total_num_worker/len(self.training_envs))
+        self.rounds = rounds
 
-        if self.track_data:
-            self.memory = dict(
-            observations=[],
-            actions=[],
-            next_observations=[],
-            rewards=[],
-            costs=[],
-            terminals=[],
-            timeouts=[],
-            masks=[],
-            logprobs=[],
-            env_idxs=[],
-            successes=[],
-            )
+        print('Sampling Parameters:')
+        print('--------------------')
+        print(f'Core usage for this run           : {self.num_workers_per_round[0]}/{self.num_cores} | {multiprocessing.cpu_count()}')
+        print(f'Number of Environments each Round : {self.num_env_per_round}')
+        print(f'Total number of Worker            : {self.total_num_worker}')
+        print(f'Episodes per Worker               : {self.episodes_per_worker}')
+        torch.set_num_threads(1) # enforce one thread for each worker to avoid CPU overscription.
+
+        if self.data_num is not None:
+            # to create an enough batch..
+            self.data_buffer = self.get_reset_data(2*self.data_num)
+            self.buffer_last_idx = 0
+
+    def save_buffer(self):
+        for k in self.data_buffer:
+            self.data_buffer[k] = self.data_buffer[k][:self.data_num]
+        print('data saved!!')
+        print('mean reward: ',np.mean(self.data_buffer['rewards']))
+        print('mean cost: ',np.mean(self.data_buffer['costs']))
+        hfile = h5py.File('data.h5py', 'w')
+        for k in self.data_buffer:
+            hfile.create_dataset(k, data=self.data_buffer[k], compression='gzip')
+        hfile.close()
 
     def get_reset_data(self, batch_size):
+        '''
+        We create a initialization batch to avoid the daedlocking. 
+        The remainder of zero arrays will be cut in the end.
+        '''
         data = dict(
             observations = np.zeros((batch_size, self.obs_dim)),
             next_observations = np.zeros((batch_size, self.obs_dim)),
             actions = np.zeros((batch_size, self.action_dim)),
+            embeddings = np.zeros((batch_size, self.embed_dim)),
             rewards = np.zeros((batch_size, 1)),
             costs = np.zeros((batch_size, 1)),
             terminals = np.zeros((batch_size, 1)),
@@ -79,62 +125,71 @@ class OnlineSampler:
             successes = np.zeros((batch_size, 1)),
         )
         return data
-
-    def make_pomdp(self):
-        # not developed
-        observations = np.delete(self.observations, self.pomdp, axis=1)
-        next_observations = np.delete(self.next_observations, self.pomdp, axis=1)
-        initial_observations = np.delete(self.initial_observations, self.pomdp, axis=1)
-        if self._obs_normalized:
-            self._obs_mean = np.delete(self._obs_mean, self.pomdp)
-            self._obs_std = np.delete(self._obs_std, self.pomdp)
-
-        self.observations = observations    
-        self.next_observations = next_observations
-        self.initial_observations = initial_observations
-
+    
     def collect_trajectory(self, pid, queue, env, policy, thread_batch_size, episode_len,
-                           deterministic=False, running_state=None, env_idx=0, seed=0):
-        # estimate the batch size
+                           episode_num, deterministic=False, env_idx=0, seed=0):
+        # estimate the batch size to hava a large batch
         batch_size = thread_batch_size + episode_len
         data = self.get_reset_data(batch_size=batch_size)
         current_step = 0
+        ep_num = 0
         while current_step < thread_batch_size:
-            # initialization
+            # break criteria
+            if ep_num >= episode_num:
+                #pass
+                break
+            
+            # var initialization
             _returns = 0
             t = 0 
+
+            # env initialization
             try:
                 s, _ = env.reset(seed=seed)
             except:
                 s = env.reset(seed=seed)
-            a = np.zeros((self.action_dim, ))
-            ns = s # initialization
-            rew = 0.0
-            mask = 1
             
-            s, _, e_s, _ = policy.encode_obs((s, a, ns, [rew], mask), running_state=running_state, env_idx=env_idx)
+            # normalizing state
+            if self.running_state is not None:
+                s = self.running_state(s)
+            # create mdp for encoding process. all element should have dimension (1,) than scaler
+            a = np.zeros((self.action_dim, ))
+            ns = s
 
+            mdp = (s, a, ns, np.array([0]), np.array([1]))
+
+            # policy.encode should output s, ns, encoded_s, and encodded_ns
+            with torch.no_grad():
+                s, _, e_s, _, _ = policy.encode_obs(mdp, env_idx=env_idx, reset=True)
+            
+            # begin the episodic loop
             while t < episode_len:
+                # sample action
                 with torch.no_grad():
-                    a, logprob = policy.actforward(e_s, deterministic=deterministic)
-                    a = a.numpy(); logprob = logprob.numpy()
-
+                    a, logprob = policy.select_action(e_s, deterministic=deterministic)
+                    
+                # env stepping
                 try:
-                    ns, rew, term, trunc, infos = env.step(a)
+                    ns, rew, term, trunc, infos = env.step(a); cost = 0.0
                 except:
-                    ns, rew, term, infos = env.step(a)                    
+                    ns, rew, term, infos = env.step(a); cost = 0.0              
                     trunc = True if t == episode_len else False
                 
-                _, ns, _, e_ns = policy.encode_obs((s, a, ns, [rew], mask), running_state=running_state, env_idx=env_idx, reset=False)
-                s = ns; e_s = e_ns
-                
-                cost = cost_fn(s, a, ns)
-
+                success = infos['success']
+            
                 done = trunc or term
                 mask = 0 if done else 1
+                
+                # normalizing state
+                if self.running_state is not None:
+                    ns = self.running_state(ns)
 
-                _returns += rew
-
+                # state encoding
+                mdp = (s, a, ns, np.array([rew]), np.array([mask]))
+                with torch.no_grad():
+                    _, ns, _, e_ns, embedding = policy.encode_obs(mdp, env_idx=env_idx)
+                
+                # saving the data
                 data['observations'][current_step+t, :] = s
                 data['actions'][current_step+t, :] = a
                 data['next_observations'][current_step+t, :] = ns
@@ -144,52 +199,41 @@ class OnlineSampler:
                 data['timeouts'][current_step+t, :] = trunc
                 data['masks'][current_step+t, :] = mask
                 data['logprobs'][current_step+t, :] = logprob
-                data['env_idxs'][current_step+t, :] = env_idx
-                try:
-                    data['successes'][current_step+t, :] = infos['success']
-                except:
-                    data['successes'][current_step+t, :] = 0.0
+                data['embeddings'][current_step+t, :] = embedding
+                data['env_idxs'][current_step+t, :] = env_idx    
+                data['successes'][current_step+t, :] = success
 
+                s = ns; e_s = e_ns
+                _returns += rew
                 t += 1
     
                 if done:        
                     # clear log
+                    ep_num += 1
                     current_step += t
                     _returns = 0
-                    try:
-                        s, _ = env.reset(seed=seed)
-                    except:
-                        s = env.reset(seed=seed)
                     break
-
+                
         memory = dict(
             observations=data['observations'].astype(np.float32),
             actions=data['actions'].astype(np.float32),
             next_observations=data['next_observations'].astype(np.float32),
+            embeddings=data['embeddings'].astype(np.float32),
             rewards=data['rewards'].astype(np.float32),
             costs=data['costs'].astype(np.float32),
             terminals=data['terminals'].astype(np.int32),
             timeouts=data['timeouts'].astype(np.int32),
             masks=data['masks'].astype(np.int32),
-            logprobs=data['logprobs'].astype(np.int32),
+            logprobs=data['logprobs'].astype(np.float32),
             env_idxs=data['env_idxs'].astype(np.int32),
             successes=data['successes'].astype(np.float32),
         )
-        if self.track_data:
-            for k in self.memory:
-                self.memory[k].extend(memory[k])
-            if len(self.memory['rewards']) >= self.data_size:
-                for k in self.memory:
-                    self.memory[k] = self.memory[k][:self.data_size]
-                print('mean reward: ',np.mean(self.memory['rewards']))
-                print('mean cost: ',np.mean(self.memory['costs']))
-                hfile = h5py.File('data.h5py', 'w')
-                for k in self.memory:
-                    hfile.create_dataset(k, data=self.memory[k], compression='gzip')
-                hfile.close()
-
-        for k in memory:
-            memory[k] = memory[k][:thread_batch_size]
+        if current_step < thread_batch_size:
+            for k in memory:
+                memory[k] = memory[k][:current_step]
+        else:
+            for k in memory:
+                memory[k] = memory[k][:thread_batch_size]
         if queue is not None:
             queue.put([pid, memory])
         else:
@@ -202,52 +246,77 @@ class OnlineSampler:
         policy.encoder.device = device
         return policy
 
-    def collect_samples(self, training_envs, policy, seed, deterministic=False):
+    def collect_samples(self, policy, seed, deterministic=False, pid=None, local_queue=None, latent_path=None):
         '''
-        It is designed for one worker to work on two episodes, and one worker at least is assigned for each env. 
-        At least one worker for one env,
-        One worker to take two episodes sampling.
-        Hence, total num_workers = len(training_envs) * (episode_num / 2)
-        So targetting worker_batch_size will be: total / num_worker 
-            = (len(training_envs) * episode_len * episode_num) / (len(training_envs) * (episode_num / 2))
-            = 2 * episode_len
+        All sampling and saving to the memory is done in numpy.
+        return: dict() with elements in numpy
         '''
         t_start = time.time()
         policy = self.to_device(policy)
         
-        if self.total_num_workers != 1:
-            workers = []
-            for i, env in enumerate(self.training_envs):
-                for j in range(self.num_worker_per_env):
-                    worker_idx = i*self.num_worker_per_env + j + 1
-                    if worker_idx == self.total_num_workers:
-                        break
-                    else:
-                        worker_args = (worker_idx, self.queue, env, policy, self.thread_batch_size, self.episode_len,
-                                        deterministic, self.running_state, i, seed)
-                        workers.append(multiprocessing.Process(target=self.collect_trajectory, args=worker_args))
-        
-            for worker in workers:
-                worker.start()
+        queue = multiprocessing.Manager().Queue()
+        env_idx = 0
+        worker_idx = 0
 
-        memory = self.collect_trajectory(0, None, training_envs[-1], policy, self.thread_batch_size, self.episode_len,
-                                        deterministic, self.running_state, len(training_envs)-1, seed)
+        for round_number in range(self.rounds):
+            #print(f"Starting round {round_number + 1}/{self.rounds}")
+            processes = []
+            #print(f'indices: {env_idx}<->{env_idx+self.num_env_per_round[round_number]}')
+            envs = self.training_envs[env_idx:env_idx+self.num_env_per_round[round_number]]
+            for env in envs:
+                workers_for_env = self.num_workers_per_round[round_number] // len(envs)
+                for _ in range(workers_for_env):
+                    if worker_idx == self.total_num_worker - 1:
+                        '''Main thread process'''
+                        memory = self.collect_trajectory(worker_idx, None, env, policy, self.thread_batch_size,
+                                                         self.episode_len, self.episode_num, deterministic, env_idx, seed)
+                    else:
+                        '''Sub-thread process'''
+                        worker_args = (worker_idx, queue, env, policy, self.thread_batch_size, 
+                                self.episode_len, self.episode_num, deterministic, env_idx, seed)
+                        p = multiprocessing.Process(target=self.collect_trajectory, args=worker_args)
+                        processes.append(p)
+                        p.start()
+                    worker_idx += 1
+                env_idx += 1
+            for p in processes:
+                p.join()        
+
+        worker_memories = [None] * (worker_idx - 1)
+        for _ in range(worker_idx - 1): 
+            pid, worker_memory = queue.get()
+            worker_memories[pid] = worker_memory
         
-        if self.total_num_workers != 1:
-            worker_memories = [None] * len(workers)
-            for worker in workers: 
-                pid, worker_memory = self.queue.get()
-                worker_memories[pid - 1] = worker_memory
-            for worker_memory in worker_memories:
-                for k in memory:
-                    memory[k] = np.concatenate((memory[k], worker_memory[k]), axis=0)
-                    
+        if latent_path is not None:
+            '''draw latent variable !!!'''
+            latent_info = [worker_memories[i]['embeddings'] for i in range(self.num_worker_per_env-1, len(worker_memories), self.num_worker_per_env)]
+            latent_info.append(memory['embeddings'])
+            
+            tasks_name = []
+            for env in self.training_envs:
+                try:
+                    tasks_name.append(env.task_name)
+                except:
+                    tasks_name.append(env.unwrapped.spec.id)
+
+            visualize_latent_variable(tasks_name, latent_info, latent_path)
+            
+        for worker_memory in worker_memories:
+            for k in memory:
+                memory[k] = np.concatenate((memory[k], worker_memory[k]), axis=0)
+        if self.data_num is not None:
+            memory_size = memory['observations'].shape[0]
+            for k in memory:
+                self.data_buffer[k][self.buffer_last_idx:self.buffer_last_idx+memory_size, :] = memory[k] 
+            self.buffer_last_idx += memory_size
+            if self.buffer_last_idx >= self.data_num:
+                self.save_buffer()
+                self.data_num = None
+
         policy = self.to_device(policy, self.device)
         t_end = time.time()
-        
-        for key, item in memory.items():
-            memory[key] = torch.tensor(item).to(self.device)
-        print(memory['observations'].shape)
-        memory['sample_time'] = t_end - t_start
 
-        return memory
+        if local_queue is not None:
+            return local_queue.put([pid, memory, t_end - t_start])
+        else:
+            return memory, t_end - t_start

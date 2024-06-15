@@ -5,6 +5,7 @@ import gym
 import cv2
 import numpy as np
 import torch
+from torch.utils.tensorboard import SummaryWriter
 import gym
 import wandb
 from copy import deepcopy
@@ -26,6 +27,7 @@ class MFPolicyTrainer:
         eval_env: gym.Env,
         eval_env_idx: int,
         logger: WandbLogger,
+        writer: SummaryWriter,
         epoch: int = 1000,
         init_epoch: int = 0,
         step_per_epoch: int = 1000,
@@ -54,6 +56,7 @@ class MFPolicyTrainer:
         self.eval_env = eval_env
         self.eval_env_idx = eval_env_idx
         self.logger = logger
+        self.writer = writer
 
         self._epoch = epoch
         self._init_epoch = init_epoch
@@ -167,6 +170,8 @@ class MFPolicyTrainer:
                 loss = self.policy.learn(batch); loss['sample_time'] = sample_time
                 self.logger.store(**loss)
                 self.logger.write_without_reset(int(e*self._step_per_epoch + it))
+                for key, value in loss.items():
+                    self.writer.add_scalar(key, value, int(e*self._step_per_epoch + it))
 
             if self.lr_scheduler is not None:
                 self.lr_scheduler.step()
@@ -217,6 +222,7 @@ class MFPolicyTrainer:
                 self.last_max_reward = np.mean(last_10_reward_performance)
         
         self.logger.print("total time: {:.2f}s".format(time.time() - start_time))
+        self.writer.close()
         return {"last_10_reward_performance": np.mean(last_10_reward_performance),
                 "last_10_cost_performance": np.mean(last_10_cost_performance)}
     

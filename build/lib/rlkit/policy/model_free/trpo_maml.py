@@ -5,11 +5,12 @@ import torch
 import torch.nn as nn
 import math
 import time
+from copy import deepcopy
 
 from typing import Dict, Union, Tuple
 from rlkit.policy import BasePolicy
 from rlkit.nets import BaseEncoder
-from rlkit.utils.utils  import estimate_advantages, get_flat_params_from, set_flat_params_to, normal_log_density, estimate_episodic_value
+from rlkit.utils.utils import estimate_advantages, estimate_episodic_value, normal_log_density, set_flat_params_to, get_flat_params_from
 
 def conjugate_gradients(Avp, b, nsteps, device, residual_tol=1e-10):
     x = torch.zeros(b.size()).to(device)
@@ -41,24 +42,24 @@ def line_search(model, f, x, fullstep, expected_improve_full, max_backtracks=10,
         ratio = actual_improve / expected_improve
 
         if ratio > accept_ratio:
-            return True, x_new
-    return False, x
+            return True, x_new, stepfrac * fullstep
+    return False, x, stepfrac * fullstep
 
-
-class TRPOPolicy(BasePolicy):
+class TRPOMAMLPolicy(BasePolicy):
     def __init__(
             self, 
             actor: nn.Module, 
             critic: nn.Module,  
-            encoder: BaseEncoder,
             optimizer: torch.optim.Optimizer,
-            masking_indices: list = None,
+            encoder: BaseEncoder,
+            masking_indices = None,
             tau: float = 0.95,
             gamma: float  = 0.99,
             max_kl: float = 1e-3,
             damping: float = 1e-2,
             l2_reg: float = 1e-6,
             grad_norm: bool = False,
+            critic_lr: float = 3e-4,
             device = None
             ):
         super().__init__()
@@ -67,7 +68,6 @@ class TRPOPolicy(BasePolicy):
         self.critic = critic
         self.encoder = encoder
         self.optimizer = optimizer
-
         self.masking_indices = masking_indices
 
         self.loss_fn = torch.nn.MSELoss()
@@ -77,11 +77,22 @@ class TRPOPolicy(BasePolicy):
         self._max_kl = max_kl
         self._damping = damping
         self._l2_reg = l2_reg
+        self._critic_lr = critic_lr
         self.grad_norm = grad_norm
 
         self.param_size = sum(p.numel() for p in self.actor.parameters())
         self.device = device
     
+    def initialize_optimizer(self):
+        # re-initialize the optimizer's referencing parameters
+        # since deepcopy method does not copy its parameter reference
+        # i.e., deepcopy copies everything but optimizer's parameter referencing
+        if self.encoder.encoder_type == 'recurrent':
+            self.optimizer = torch.optim.Adam([{'params':self.critic.parameters(), "lr":self._critic_lr},
+                                               {'params':self.encoder.parameters(), "lr":self._critic_lr}])
+        else:
+            self.optimizer = torch.optim.Adam(self.critic.parameters(), lr=self._critic_lr)
+
     def train(self) -> None:
         self.actor.train()
         if self.encoder.encoder_type == 'recurrent':
@@ -97,7 +108,7 @@ class TRPOPolicy(BasePolicy):
     def actforward(
         self,
         obs: torch.Tensor,
-        deterministic: bool = False
+        deterministic: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         dist = self.actor(obs)
         if deterministic:
@@ -115,7 +126,7 @@ class TRPOPolicy(BasePolicy):
         with torch.no_grad():
             action, logprob = self.actforward(obs, deterministic)
         return action.cpu().numpy(), logprob.cpu().numpy()
-
+    
     def encode_obs(self, mdp_tuple, env_idx = None, reset=False):
         '''
         Input: mdp = (s, a, s', r, mask)
@@ -136,11 +147,6 @@ class TRPOPolicy(BasePolicy):
         if self.encoder.encoder_type == 'none':
             # skip embedding
             embedding, embedded_obs, embedded_next_obs = None, obs, next_obs
-        elif self.encoder.encoder_type == 'onehot':
-            obs_embedding = self.encoder(obs, env_idx)
-            next_obs_embedding = self.encoder(next_obs, env_idx)
-            embedded_obs = torch.concatenate((obs_embedding, obs), axis=-1) 
-            embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
         elif self.encoder.encoder_type == 'recurrent':
             if is_batch:
                 t_obs = torch.concatenate((obs[0][None, :], obs), axis=0)
@@ -159,13 +165,14 @@ class TRPOPolicy(BasePolicy):
                 mdp = mdp[None, None, :]
                 embedding = self.encoder(mdp, do_reset=reset)
                 embedded_next_obs = torch.concatenate((embedding, self.mask_obs(next_obs, self.masking_indices, dim=-1)), axis=-1)
-                
                 embedded_obs = embedded_next_obs # we are not using this            
         else:
             NotImplementedError
-        return obs, next_obs, embedded_obs, embedded_next_obs, embedding
+        return obs, next_obs, embedded_obs, embedded_next_obs
     
-    def learn(self, batch):
+    def learn(self, batch, compute_param_grad=True):
+        self.initialize_optimizer()
+
         obss = torch.from_numpy(batch['observations']).to(self.device)
         actions = torch.from_numpy(batch['actions']).to(self.device)
         next_obss = torch.from_numpy(batch['next_observations']).to(self.device)
@@ -173,27 +180,27 @@ class TRPOPolicy(BasePolicy):
         masks = torch.from_numpy(batch['masks']).to(self.device)
         env_idxs = torch.from_numpy(batch['env_idxs']).to(self.device)
         successes = torch.from_numpy(batch['successes']).to(self.device)
-
+        
         mdp_tuple = (obss, actions, next_obss, rewards, masks)
-        _, _, embedded_obss, _ , _= self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
-
+        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idxs, reset=True)
+        
         values = self.critic(embedded_obss)
 
         """get advantage estimation from the trajectories"""
         advantages, returns = estimate_advantages(rewards, masks, values.detach(), self._gamma, self._tau, self.device)
         episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
-
-        """update critic"""
+        
+        '''update critic'''
         self.optimizer.zero_grad()
         v_loss = self.loss_fn(values, returns)
         v_loss.backward()
         self.optimizer.step()
 
-        """update policy"""
+        '''update policy'''
         with torch.no_grad():
             dist = self.actor(embedded_obss)
             fixed_log_probs = normal_log_density(actions, dist.mode(), dist.logstd(), dist.std())
-
+        
         def get_loss(volatile=False):
             with torch.set_grad_enabled(not volatile):
                 dist = self.actor(embedded_obss)
@@ -217,12 +224,26 @@ class TRPOPolicy(BasePolicy):
             return flat_grad_grad_kl + v * self._damping
 
         Fvp = Fvp_direct
-        
+
         loss = get_loss()
-        grads = torch.autograd.grad(loss, self.actor.parameters())
-        loss_grad = torch.cat([grad.view(-1) for grad in grads]).detach()
+        grads = torch.autograd.grad(loss, self.actor.parameters(), retain_graph=True, create_graph=True)
+        loss_grad = torch.cat([grad.view(-1) for grad in grads]) 
+        
+        if compute_param_grad:
+            second_loss_grad = torch.ones(self.param_size)
+            for i in range(self.param_size):
+                grads = torch.autograd.grad(loss_grad[i], self.actor.parameters(), retain_graph=True) 
+                second_loss_grad[i] = torch.cat([grad.view(-1) for grad in grads])[i] # collect diagonal element of Hessian
+            loss_grad = loss_grad.detach()
+            second_loss_grad = second_loss_grad.detach()
+        else:
+            loss_grad = loss_grad.detach()
+            second_loss_grad = None
+        
         if self.grad_norm:
             loss_grad = loss_grad/torch.norm(loss_grad)
+            second_loss_grad = second_loss_grad/torch.norm(second_loss_grad)
+
         stepdir = conjugate_gradients(Fvp, -loss_grad, 10, device=self.device)
 
         shs = 0.5 * (stepdir.dot(Fvp(stepdir)))
@@ -231,7 +252,7 @@ class TRPOPolicy(BasePolicy):
         expected_improve = -loss_grad.dot(fullstep)
 
         prev_params = get_flat_params_from(self.actor)
-        ln_sch_success, new_params = line_search(self.actor, get_loss, prev_params, fullstep, expected_improve)
+        ln_sch_success, new_params, final_step = line_search(self.actor, get_loss, prev_params, fullstep, expected_improve)
         set_flat_params_to(self.actor, new_params)
 
         result = {
@@ -242,7 +263,36 @@ class TRPOPolicy(BasePolicy):
             'train/line_search': int(ln_sch_success)
         }
         
-        return result 
+        actor_param = get_flat_params_from(self.actor).detach()
+        critic_param = get_flat_params_from(self.critic).detach()
+        if self.encoder.encoder_type =='recurrent':
+            encoder_param = get_flat_params_from(self.encoder).detach()
+        else:
+            encoder_param = None
+
+        return result, (final_step, second_loss_grad), (actor_param, critic_param, encoder_param)
+
+    def learn_with_grad(self, memory, grad):
+        self.initialize_optimizer()
+        self.optimizer.zero_grad()
+        
+        # prepare the actor parameter's grad in array
+        prev_params = get_flat_params_from(self.actor)
+        #ln_sch_success, new_params = line_search(self.actor, get_loss, prev_params, fullstep, expected_improve)
+        new_params = prev_params + grad
+        set_flat_params_to(self.actor, new_params)
+
+        # prepare the critic parameter's grad ready
+        mdp_tuple = (memory['observations'], memory['actions'], memory['next_observations'], memory['rewards'], memory['masks'])
+        _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=memory['env_idxs'], reset=True)
+
+        values = self.critic(embedded_obss)
+        _, returns = estimate_advantages(memory['rewards'], memory['masks'], values.detach(), self._gamma, self._tau, self.device)
+        
+        v_loss = self.loss_fn(values, returns)
+        v_loss.backward()
+
+        self.optimizer.step()
     
     def mask_obs(self, obs: torch.Tensor, ind: list, dim: int) -> torch.Tensor:
         obs = obs.cpu().numpy()
@@ -263,7 +313,6 @@ class TRPOPolicy(BasePolicy):
         pickle.dump((self.actor, self.critic, self.encoder), open(path, 'wb'))
         if running_state is not None:
             pickle.dump((self.actor, self.critic, self.encoder, running_state), open(path, 'wb'))
-        
         self.actor, self.critic = self.actor.to(self.device), self.critic.to(self.device)
         if self.encoder.encoder_type == 'recurrent':
             self.encoder = self.encoder.to(self.device)

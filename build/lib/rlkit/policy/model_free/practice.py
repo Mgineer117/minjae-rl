@@ -1,16 +1,26 @@
-import numpy as np
+# Sample list of dictionaries
+list_of_dicts = [
+    {'a': 10, 'b': 20, 'c': 30},
+    {'a': 40, 'b': 50, 'c': 60},
+    {'a': 70, 'b': 80, 'c': 90},
+]
 
-# Create the x array (1000 x 10) filled with zeros
-x = np.zeros((1000, 10))
+# Initialize a dictionary to store the sums
+sums = {}
+# Initialize a dictionary to store the counts
+counts = {}
 
-# Example idx array (1000 x 1) with random indices between 0 and 9
-idx = np.random.randint(0, 10, size=(1000, 1))
+# Iterate over each dictionary in the list
+for d in list_of_dicts:
+    for key, value in d.items():
+        if key in sums:
+            sums[key] += value
+            counts[key] += 1
+        else:
+            sums[key] = value
+            counts[key] = 1
 
-# Modify x according to idx
-# We use np.arange to create an array of row indices
-x[np.arange(1000), idx.flatten()] = 1
+# Calculate the averages
+averages = {key: sums[key] / counts[key] for key in sums}
 
-# Print some rows of x to verify
-print(x[:10])
-print(idx[:10])
-print(idx.flatten()[:10])
+print(averages)  # Output: {'a': 40.0, 'b': 50.0, 'c': 60.0}

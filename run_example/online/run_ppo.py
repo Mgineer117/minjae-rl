@@ -10,6 +10,7 @@ import pickle
 
 import numpy as np
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 from rlkit.utils.utils import seed_all, select_device, call_encoder
 from rlkit.nets import MLP, RNNModel, RecurrentEncoder, BaseEncoder, OneHotEncoder
@@ -172,10 +173,14 @@ def train(args=get_args()):
             args.name = args.algo_name + '-' + unique_id + "-seed" + str(seed)
         if args.group is None:
             args.group = args.task + "-seed-" + str(seed)
-        if args.logdir is not None:
+        if args.logdir is None:
             args.logdir = os.path.join(args.logdir, args.name, args.group)  
         logger = WandbLogger(default_cfg, args.project, args.group, args.name, args.logdir)
         logger.save_config(default_cfg, verbose=args.verbose)
+
+        tensorboard_path = os.path.join(logger.log_dir, 'tensorboard')
+        os.mkdir(tensorboard_path)
+        writer = SummaryWriter(log_dir=tensorboard_path)
 
         # create policy trainer
         policy_trainer = MFPolicyTrainer(
@@ -184,6 +189,7 @@ def train(args=get_args()):
             eval_env_idx=eval_env_idx,
             sampler=sampler,
             logger=logger,
+            writer=writer,
             epoch=args.epoch,
             init_epoch=args.init_epoch,
             step_per_epoch=args.step_per_epoch,

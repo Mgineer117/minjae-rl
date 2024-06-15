@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 from torch.nn import functional as F
 from typing import Dict, List, Union, Tuple, Optional
+from rlkit.nets.mlp import MLP
 
 
 class Swish(nn.Module):
@@ -106,13 +107,15 @@ class RNNModel(nn.Module):
         output = output.view(batch_size, num_timesteps, -1)
         return output, h_state
 
-
 class RecurrentEncoder(nn.Module):
     def __init__(
             self,
             input_size: int,
             hidden_size:int,
             output_size: int,
+            obs_dim: int,
+            action_dim: int,
+            masking_dim: int,
             rnn_initialization: bool = True,
             output_activation=identity,
             device="cpu"
@@ -121,52 +124,185 @@ class RecurrentEncoder(nn.Module):
         self.input_size = input_size
         self.rnn_hidden_dim = hidden_size
         self.embed_dim = output_size
+        self.obs_dim=obs_dim
+        self.action_dim=action_dim
+        self.masking_dim=masking_dim
 
         # input should be (task, seq, feat) and hidden should be (task, 1, feat)
         self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
-
+        
         self.last_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
         if rnn_initialization:
             nn.init.uniform_(self.last_layer.weight, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
             nn.init.uniform_(self.last_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
 
         self.output_activation = output_activation
+
+        self.state_decoder = MLP(
+            input_dim=self.embed_dim + self.obs_dim - self.masking_dim + self.action_dim,
+            hidden_dims=(64, 64, 32),
+            output_dim=self.obs_dim,
+        )
+
+        self.reward_decoder = MLP(
+            input_dim=self.embed_dim + self.obs_dim - self.masking_dim + self.action_dim + self.obs_dim,
+            hidden_dims=(64, 64, 32),
+            output_dim=self.embed_dim,
+        )
+
+        self.loss_fn = torch.nn.MSELoss()
+        
         self.encoder_type = 'recurrent'
         self.device = torch.device(device)
 
-        self.hn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
-        self.cn = torch.zeros(1, 1, self.rnn_hidden_dim).to(self.device)
-
-    def forward(self, input, do_reset=True, do_pad=False):
-        if do_pad:
-            input, trj = self.pack4rnn(input)
-        else:
-            input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
-            trj, seq, fea = input.shape
-        
+    def forward(self, input, do_reset, is_batch=False):
+        # prepare for batch update
+        if is_batch:
+            input, lengths = self.pack4rnn(input)
+        input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
+        trj, seq, fea = input.shape
+        # reset the LSTM
         if do_reset:
             self.hn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
             self.cn = torch.zeros(1, trj, self.rnn_hidden_dim).to(self.device)
-
-        out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
-        self.hn = hn
-        self.cn = cn
-        # take the last hidden state to predict z
-        #out = out[:, -1, :]
-
-        if do_pad:
-            out, lengths = pad_packed_sequence(out, batch_first=True)
-            trj, seq, fea = out.shape
-            output = torch.zeros((lengths.sum(), fea)).to(self.device)
+        
+        if is_batch:
+            # pass into LSTM with allowing automatic initialization for each trajectory
+            out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
+            output = torch.zeros((sum(lengths), fea)).to(self.device)
             last_length = 0
             for i, length in enumerate(lengths):
-                output[last_length:last_length+length] = out[i, :length, :]
+                output[last_length:last_length+length, :] = out[i, :length, :]
                 last_length += length
             out = output
+        else:
+            # pass into LSTM
+            out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
+            self.hn = hn # update LSTM
+            self.cn = cn # update LSTM
+            out = torch.squeeze(out) # to match the dimension
 
-        # output layer
-        preactivation = self.last_layer(out)
-        embedding = self.output_activation(preactivation)
+        # output layer for Tanh activation
+        out = self.last_layer(out)
+        out = self.output_activation(out)
+
+        embedding = out
+        return embedding.squeeze()
+    
+    def pack4rnn(self, tuple):
+        obss, actions, next_obss, rewards, masks = tuple
+        trajs = []
+        lengths = []
+        prev_i = 0
+        for i, mask in enumerate(masks):
+            if mask == 0:
+                trajs.append(torch.concatenate((obss[prev_i:i+1, :], actions[prev_i:i+1, :], next_obss[prev_i:i+1, :], rewards[prev_i:i+1, :]), axis=-1))
+                lengths.append(i+1 - prev_i)
+                prev_i = i + 1    
+        
+        # pad the data
+        largest_length = max(lengths)
+        mdp_dim = trajs[0].shape[-1]
+        padded_data = torch.zeros((len(lengths), largest_length, mdp_dim))
+
+        for i, traj in enumerate(trajs):
+            padded_data[i, :lengths[i], :] = traj
+        
+        return padded_data, lengths
+    
+    def decode(self, mdp_tuple, embedding, maksed_obs):
+        _, actions, next_obs, rewards, _ = mdp_tuple
+
+        state_decoder_input = torch.concatenate((embedding, maksed_obs, actions), axis=-1)
+        reward_decoder_input = torch.concatenate((embedding, maksed_obs, actions, next_obs), axis=-1)
+
+        next_obs_pred = self.state_decoder(state_decoder_input)
+        decomposed_rewards_pred = self.reward_decoder(reward_decoder_input)
+
+        rewards_pred = torch.sum(decomposed_rewards_pred * embedding, axis=-1, keepdim=True)
+
+        decoder_loss = self.loss_fn(next_obs, next_obs_pred) + self.loss_fn(rewards, rewards_pred)
+
+        return decoder_loss
+    
+    
+class RecurrentOfflineEncoder(nn.Module):
+    def __init__(
+            self,
+            input_size: int,
+            hidden_size:int,
+            output_size: int,
+            obs_dim: int,
+            action_dim: int,
+            rnn_initialization: bool = True,
+            output_activation=identity,
+            device="cpu"
+    ):
+        super().__init__()
+        self.input_size = input_size
+        self.rnn_hidden_dim = hidden_size
+        self.embed_dim = output_size
+        self.obs_dim=obs_dim
+        self.action_dim=action_dim
+
+        # input should be (task, seq, feat) and hidden should be (task, 1, feat)
+        self.lstm = nn.LSTM(self.input_size, self.rnn_hidden_dim, num_layers=1, batch_first=True).to(device)
+        
+        self.last_layer = nn.Linear(self.rnn_hidden_dim, output_size).to(device)
+        if rnn_initialization:
+            nn.init.uniform_(self.last_layer.weight, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+            nn.init.uniform_(self.last_layer.bias, a=-3e-3, b=3e-3)  # Set weights using uniform initialization
+
+        self.output_activation = output_activation
+
+        self.state_decoder = MLP(
+            input_dim=self.embed_dim + self.obs_dim + self.action_dim,
+            hidden_dims=(128, 128, 64, 64),
+            output_dim=self.obs_dim,
+        )
+
+        self.reward_decoder = MLP(
+            input_dim=self.embed_dim + self.obs_dim + self.action_dim + self.obs_dim,
+            hidden_dims=(128, 128, 64, 64),
+            output_dim=1,
+        )
+
+        self.loss_fn = torch.nn.MSELoss()
+        
+        self.encoder_type = 'recurrent'
+        self.device = torch.device(device)
+
+        # initialize LSTM hidden state with predefined trajectory
+        self.traj_num = 100
+        self.hn = torch.zeros((1, self.traj_num, self.rnn_hidden_dim)).to(self.device)
+        self.cn = torch.zeros((1, self.traj_num, self.rnn_hidden_dim)).to(self.device)
+
+    def forward(self, input):
+        # prepare for batch update
+        input, lengths = self.pack4rnn(input)
+        input = torch.as_tensor(input, device=self.device, dtype=torch.float32)
+        trj, seq, fea = input.shape
+        assert trj == self.traj_num
+
+        # reset the LSTM cell state
+        self.cn = torch.zeros(self.cn.shape).to(self.device)
+        
+        # pass into LSTM with allowing automatic initialization for each trajectory
+        out, (hn, cn) = self.lstm(input, (self.hn, self.cn))
+        self.hn = hn # update only hn
+
+        output = torch.zeros((sum(lengths), fea)).to(self.device)
+        last_length = 0
+        for i, length in enumerate(lengths):
+            output[last_length:last_length+length, :] = out[i, :length, :]
+            last_length += length
+        out = output
+
+        # output layer for Tanh activation
+        out = self.last_layer(out)
+        out = self.output_activation(out)
+
+        embedding = out
         return embedding.squeeze()
 
     def pack4rnn(self, tuple):
@@ -179,13 +315,30 @@ class RecurrentEncoder(nn.Module):
                 trajs.append(torch.concatenate((obss[prev_i:i+1, :], actions[prev_i:i+1, :], next_obss[prev_i:i+1, :], rewards[prev_i:i+1, :]), axis=-1))
                 lengths.append(i+1 - prev_i)
                 prev_i = i + 1    
-        # Step 1: Pad the sequences
-        padded_data = pad_sequence(trajs, batch_first=True)  # (batch_size, max_seq_len, 24)
+        
+        # pad the data
+        largest_length = max(lengths)
+        mdp_dim = trajs[0].shape[-1]
+        padded_data = torch.zeros((len(lengths), largest_length, mdp_dim))
 
-        padded_data = pack_padded_sequence(padded_data, lengths=lengths, batch_first=True, enforce_sorted=False)
+        for i, traj in enumerate(trajs):
+            padded_data[i, :lengths[i], :] = traj
 
-        batch_size = len(trajs)
-        return padded_data, batch_size
+        return padded_data, lengths
+    
+    def decode(self, mdp_tuple, embedding):
+        obs, actions, next_obs, rewards, masks = mdp_tuple
+        state_decoder_input = torch.concatenate((embedding, obs, actions))
+        reward_decoder_input = torch.concatenate((embedding, obs, actions, next_obs))
+
+        next_obs_pred = self.state_decoder(state_decoder_input)
+        rewards_pred = self.reward_decoder(reward_decoder_input)
+
+        decoder_loss = self.loss_fn(next_obs, next_obs_pred) + self.loss_fn(rewards, rewards_pred)
+
+        return decoder_loss
+
+
     
 if __name__ == "__main__":
     model = RNNModel(14, 12)

@@ -1,6 +1,7 @@
 import os
 import time
 import numpy as np
+import pickle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,12 +11,12 @@ from torch.distributions import Normal
 import gym
 from copy import deepcopy
 from typing import Dict, Union, Tuple
-from rlkit.modules import TanhMixtureNormalPolicy, TanhNormalPolicy, ValueNetwork
+from rlkit.nets import BaseEncoder
 
 np.set_printoptions(precision=3, suppress=True)
 
 
-class OPDPolicy(nn.Module):
+class OPTMAMLPolicy(nn.Module):
     """Offline policy Optimization via Stationary DIstribution Correction Estimation (OptiDICE)"""
 
     def __init__(
@@ -28,9 +29,10 @@ class OPDPolicy(nn.Module):
             v_network_optim,
             e_network_optim,
             encoder_optim,
-            masking_indices,
-            args):
-        super(OPDPolicy, self).__init__()
+            args,
+            masking_indices=None,
+            ):
+        super(OPTMAMLPolicy, self).__init__()
         self._gamma = args.gamma
         self._policy_extraction = args.policy_extraction
         self._use_policy_entropy_constraint = args.use_policy_entropy_constraint
@@ -47,6 +49,7 @@ class OPDPolicy(nn.Module):
         self._e_l2_reg = args.e_l2_reg
         self._lamb_scale = args.lamb_scale
         self._reward_scale = args.reward_scale
+        self.masking_indices = masking_indices
 
         self._iteration = torch.tensor(0, dtype=torch.int64, requires_grad=False)
         self._optimizers = dict()
@@ -58,10 +61,9 @@ class OPDPolicy(nn.Module):
         self._e_network = e_network
         self._optimizers['e'] = e_network_optim
 
+        # encoder
         self._encoder = encoder
         self._optimizers['encoder'] = encoder_optim
-
-        self.masking_indices = masking_indices
 
         self.device = args.device
         self.args = args
@@ -125,6 +127,7 @@ class OPDPolicy(nn.Module):
             if self._use_data_policy_entropy_constraint:
                 self._data_log_ent_coeff = torch.tensor(0.0, dtype=torch.float32, requires_grad=True)
                 self._optimizers['data_ent_coeff'] = optim.Adam([self._data_log_ent_coeff], lr=self._lr)
+
 
     def v_loss(self, initial_v_values, e_v, w_v, f_w_v, result={}):
         # Compute v loss
@@ -330,7 +333,7 @@ class OPDPolicy(nn.Module):
 
         mdp_tuple = (observation, action, next_observation, reward, mask)
         _, _, embedded_obss, _ = self.encode_obs(mdp_tuple, env_idx=env_idx, reset=True)
-        
+
         e_values = self._e_network(embedded_obss, action)
         preactivation_e = (e_values - self._lamb_scale * self._lamb_e) / self._alpha
         w_e = self._r_fn(preactivation_e)
@@ -341,7 +344,6 @@ class OPDPolicy(nn.Module):
             w_e_lamb = self._r_fn(preactivation_e_lamb)
             f_w_e_lamb = self._g_fn(preactivation_e_lamb)
         
-
         # Compute loss and optimize
         loss_result = self.v_loss(initial_v_values, e_v, w_v, f_w_v, result={})
 
@@ -358,11 +360,11 @@ class OPDPolicy(nn.Module):
         
         loss_result.update(self.e_loss(e_v.detach(), e_values, w_e, f_w_e))
 
-        self._optimizers['e'].zero_grad()
+        self._optimizers['e'].zero_grad(); 
         if self._optimizers['encoder'] is not None:
             self._optimizers['encoder'].zero_grad()
         e_loss = loss_result['e_loss']; e_loss.backward()
-        self._optimizers['e'].step()
+        self._optimizers['e'].step(); 
         if self._optimizers['encoder'] is not None:
             self._optimizers['encoder'].step()
 
@@ -374,18 +376,27 @@ class OPDPolicy(nn.Module):
 
         loss_result.update(self.policy_loss(embedded_obss.detach(), action, w_e.detach()))
         
+        # manual gradient updates
         self._optimizers['policy'].zero_grad()
-        policy_loss = loss_result['policy_loss']; policy_loss.backward()
+        policy_loss = loss_result['policy_loss']
+        policy_grads = torch.autograd.grad(policy_loss, self._policy_network.parameters(), retain_graph=True, create_graph=True)
+        for param, grad in zip(self._policy_network.parameters(), policy_grads):
+            param.grad = grad
         self._optimizers['policy'].step()
+
+        # compute second derivate of loss (parameter gradients)
+        second_derivative = torch.zeros((policy_grads.shape))
+        for i in range(second_derivative.numel()):
+            second_derivative[i] = torch.autograd.grad(policy_grads[i], self._policy_network.parameters())[i]
 
         if self._use_policy_entropy_constraint: 
             self._optimizers['ent_coeff'].zero_grad()
             ent_coeff_loss = loss_result['ent_coeff_loss']; ent_coeff_loss.backward()
             self._optimizers['ent_coeff'].step()
 
-
+        '''
         if self._policy_extraction == 'iproj':
-            loss_result.update(self.data_policy_loss(embedded_obss.detach(), action))
+            loss_result.update(self.data_policy_loss(observation, action))
             
             self._optimizers['data_policy'].zero_grad()
             data_policy_loss = loss_result['data_policy_loss']; data_policy_loss.backward()
@@ -395,7 +406,7 @@ class OPDPolicy(nn.Module):
                 self._optimizers['data_ent_coeff'].zero_grad()
                 data_ent_coeff_loss = loss_result['data_ent_coeff_loss']; data_ent_coeff_loss.backward()
                 self._optimizers['data_ent_coeff'].step()
-
+        '''
         loss_result.update({"e_v": torch.mean(e_v)})
         loss_result.update({"e_values": torch.mean(e_values)})
 
@@ -409,7 +420,15 @@ class OPDPolicy(nn.Module):
             else:
                 loss_dict[key] = value
         
-        return loss_dict
+        return loss_dict, (policy_grads, second_derivative)
+
+    def meta_update(self, meta_grad):
+        # manual gradient updates for adam
+        self._optimizers['policy'].zero_grad() # clear grad memory
+        # no additonal grad computation is needed since meta_grad will be the gradient
+        for param, grad in zip(self._policy_network.parameters(), meta_grad):
+            param.grad = grad
+        self._optimizers['policy'].step()
 
     def encode_obs(self, mdp_tuple, env_idx = None, reset=False):
         '''
@@ -426,22 +445,38 @@ class OPDPolicy(nn.Module):
         rewards = torch.as_tensor(rewards, device=self.device, dtype=torch.float32)
         masks = torch.as_tensor(masks, device=self.device, dtype=torch.int32)
 
-        if self._encoder.encoder_type == 'none':
+        if self.encoder.encoder_type == 'none':
             # skip embedding
             embedding, embedded_obs, embedded_next_obs = None, obs, next_obs
-        elif self._encoder.encoder_type == 'onehot':
-            obs_embedding = self._encoder(obs, env_idx)
-            next_obs_embedding = self._encoder(next_obs, env_idx)
+        elif self.encoder.encoder_type == 'onehot':
+            obs_embedding = self.encoder(obs, env_idx)
+            next_obs_embedding = self.encoder(next_obs, env_idx)
             embedded_obs = torch.concatenate((obs_embedding, obs), axis=-1) 
             embedded_next_obs = torch.concatenate((next_obs_embedding, next_obs), axis=-1)
-        elif self._encoder.encoder_type == 'recurrent':
-            embedding = self._encoder(mdp_tuple, do_reset=reset, is_batch=True)
-            embedding = torch.concatenate((torch.zeros(1, embedding.shape[-1]).to(self.device), embedding), axis=0)
+        elif self.encoder.encoder_type == 'recurrent':
+            embedding = self.encoder(mdp_tuple, do_reset=reset, is_batch=True)
+            embedding = torch.concatenate((torch.zeros(1,embedding.shape[-1]).to(self.device), embedding), axis=0)
             embedded_obs = torch.concatenate((embedding[:-1], self.mask_obs(obs, self.masking_indices, dim=-1)), axis=-1)
             embedded_next_obs = torch.concatenate((embedding[1:], self.mask_obs(next_obs, self.masking_indices, dim=-1)), axis=-1)       
         else:
             NotImplementedError
         return obs, next_obs, embedded_obs, embedded_next_obs
+
+    def save_model(self, logdir, epoch, running_state=None, is_best=False):
+        self.actor, self.data_actor, self.v_network, self.e_network = self.actor.cpu(), self.data_actor.cpu(), self.v_network.cpu(), self.e_network.cpu()
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder = self.encoder.cpu()
+        # save checkpoint
+        if is_best:
+            path = os.path.join(logdir, "best_model.p")
+        else:
+            path = os.path.join(logdir, "model_" + str(epoch) + ".p")
+        pickle.dump((self.actor, self.critic), open(path, 'wb'))
+        if running_state is not None:
+            pickle.dump((self.actor, self.critic, running_state), open(path, 'wb'))
+        self.actor, self.data_actor, self.v_network, self.e_network = self.actor.to(self.device), self.data_actor.to(self.device), self.v_network.to(self.device), self.e_network.to(self.device)
+        if self.encoder.encoder_type == 'recurrent':
+            self.encoder = self.encoder.to(self.device)
 
     def mask_obs(self, obs: torch.Tensor, ind: list, dim: int) -> torch.Tensor:
         obs = obs.cpu().numpy()

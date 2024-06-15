@@ -4,15 +4,21 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class NormalWrapper(torch.distributions.Normal):
+class NormalWrapper(torch.distributions.MultivariateNormal):
     def log_prob(self, actions):
-        return super().log_prob(actions).sum(-1, keepdim=True)
+        return super().log_prob(actions)
 
     def entropy(self):
-        return super().entropy().sum(-1)
+        return super().entropy()
 
     def mode(self):
         return self.mean
+
+    def std(self):
+        return self.stddev
+        
+    def logstd(self):
+        return torch.log(self.stddev)
 
 class TanhNormalWrapper(torch.distributions.Normal):
     def __init__(self, loc, scale, max_action):
@@ -116,6 +122,7 @@ class DiagGaussian(nn.Module):
 
     def forward(self, logits):
         mu = self.mu(logits)
+        
         if not self._unbounded:
             mu = self._max * torch.tanh(mu)
         if self._c_sigma:
@@ -124,7 +131,8 @@ class DiagGaussian(nn.Module):
             shape = [1] * len(mu.shape)
             shape[1] = -1
             sigma = (self.sigma_param.view(shape) + torch.zeros_like(mu)).exp()
-        return NormalWrapper(mu, sigma)
+        cov_mat = torch.diag_embed(sigma)
+        return NormalWrapper(mu, cov_mat)
 
 
 class TanhDiagGaussian(DiagGaussian):

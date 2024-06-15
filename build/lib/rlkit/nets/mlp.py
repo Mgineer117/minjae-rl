@@ -42,10 +42,8 @@ class MLP(nn.Module):
 class BaseEncoder():
     def __init__(
             self,
-            embed_dim,
             device="cpu"
     ):
-        self.embed_dim = embed_dim
         self.encoder_type = 'none'
         self.device = torch.device(device)
 
