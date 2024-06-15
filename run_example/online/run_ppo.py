@@ -168,7 +168,7 @@ def train(args=get_args()):
         # setup logger
         default_cfg = vars(args)#asdict(args)
         args.group = '-'.join((args.task, args.algo_name, unique_id))
-        args.name = "seed:" + str(seed)
+        args.name = '-'.join((args.algo_name, unique_id, "seed:" + str(seed)))
         args.logdir = os.path.join(args.logdir, args.group)  
             
         logger = WandbLogger(default_cfg, args.project, args.group, args.name, args.logdir)
