@@ -12,7 +12,7 @@ class NormalWrapper(torch.distributions.MultivariateNormal):
         return super().entropy().unsqueeze(-1)
 
     def mode(self):
-        return self.mean.unsqueeze(-1)
+        return self.mean#.unsqueeze(-1)
 
     def std(self):
         return self.stddev.unsqueeze(-1)
