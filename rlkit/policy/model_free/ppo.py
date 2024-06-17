@@ -152,7 +152,6 @@ class PPOPolicy(BasePolicy):
         """get advantage estimation from the trajectories"""
         advantages, returns = estimate_advantages(rewards, masks, values, self._gamma, self._tau, self.device)
         episodic_reward = estimate_episodic_value(rewards, masks, 1.0, self.device)
-        advantages = torch.squeeze(advantages)
 
         '''Update the parameters'''
         for _ in range(self._K_epochs):    
